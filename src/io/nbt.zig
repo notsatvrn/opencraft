@@ -37,8 +37,28 @@ pub const Value = union(enum) {
         };
     }
 
-    pub fn getSize(self: Value) u8 {
-
+    pub fn getSize(self: Value) usize {
+        return switch (self) {
+            Value.byte => 1,
+            Value.short => 2,
+            Value.int => 4,
+            Value.long => 8,
+            Value.float => 4,
+            Value.double => 8,
+            Value.byte_array => |v| v.len,
+            Value.string => |v| v.len,
+            Value.list => |v| if (v.items.len > 0) v.items[0].getSize() * v.items.len else 0,
+            Value.compound => |v| {
+                var total: usize = 0;
+                for (v.iter()) |kv| {
+                    total += kv.key_ptr.len;
+                    total += kv.value_ptr.getSize();
+                }
+                return total;
+            },
+            Value.int_array => |v| 4 * v.len,
+            Value.long_array => |v| 8 * v.len,
+        };
     }
 };
 
@@ -89,19 +109,19 @@ pub const Tag = struct {
 
         switch (self.value) {
             Value.byte => |v| try buf.append(@intCast(u8, v)),
-            Value.short => |v| number.writeBigBuf(i16, v, @constCast(buf.items[capacity..capacity + 2])),
-            Value.int => |v| number.writeBigBuf(i32, v, @constCast(buf.items[capacity..capacity + 4])),
-            Value.long => |v| number.writeBigBuf(i64, v, @constCast(buf.items[capacity..capacity + 8])),
-            Value.float => |v| number.writeBigBuf(f32, v, @constCast(buf.items[capacity..capacity + 4])),
-            Value.double => |v| number.writeBigBuf(f64, v, @constCast(buf.items[capacity..capacity + 8])),
+            Value.short => |v| number.writeBigBuf(i16, v, @constCast(buf.items[capacity .. capacity + 2])),
+            Value.int => |v| number.writeBigBuf(i32, v, @constCast(buf.items[capacity .. capacity + 4])),
+            Value.long => |v| number.writeBigBuf(i64, v, @constCast(buf.items[capacity .. capacity + 8])),
+            Value.float => |v| number.writeBigBuf(f32, v, @constCast(buf.items[capacity .. capacity + 4])),
+            Value.double => |v| number.writeBigBuf(f64, v, @constCast(buf.items[capacity .. capacity + 8])),
             Value.byte_array => |v| {
-                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.len)), @constCast(buf.items[capacity..capacity + 4]));
+                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.len)), @constCast(buf.items[capacity .. capacity + 4]));
                 for (v) |byte| {
                     try buf.append(@intCast(u8, byte));
                 }
             },
             Value.string => |v| {
-                number.writeBigBuf(i16, @intCast(i16, @truncate(u16, v.len)), @constCast(buf.items[capacity..capacity + 2]));
+                number.writeBigBuf(i16, @intCast(i16, @truncate(u16, v.len)), @constCast(buf.items[capacity .. capacity + 2]));
                 try buf.appendSlice(v);
             },
             else => {}, // TODO

@@ -128,7 +128,7 @@ pub fn writeVarLong(value: i64) ![]const u8 {
 }
 
 // Write a fixed-point number. Writes to a buffer.
-pub fn writeFixedPointBuf(value: f32, buf: *[@sizeOf(T)]u8) ![]const u8 {
+pub fn writeFixedPointBuf(value: f32, buf: *[@sizeOf(f32)]u8) ![]const u8 {
     return writeBigBuf(i32, @floatToInt(i32, value / 32.0), buf);
 }
 
