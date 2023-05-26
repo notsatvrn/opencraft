@@ -49,11 +49,12 @@ pub const Vec3i = packed struct {
     }
 };
 
-pub const Direction = enum {
+pub const Direction = union(enum) {
     north,
     west,
     south,
     east,
     up,
     down,
+    exact: struct { pitch: f64, yaw: f64 },
 };

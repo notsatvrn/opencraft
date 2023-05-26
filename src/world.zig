@@ -1,8 +1,44 @@
 const std = @import("std");
 
-pub const dimensions = @import("world/dimensions.zig");
+// Numerical identifiers. (example: "1:1")
+pub const NumericalID = struct {
+    value: u16 = 0,
+    variant: u16 = 0,
 
-pub usingnamespace dimensions;
+    // "1:1" to { 1, 1 }
+    pub fn fromBytes(bytes: []const u8) NumericalID {
+        var i: usize = 0;
+
+        while (i < bytes.len) : (i += 1) {            
+            if (bytes[i] == ':' and i < bytes.len - 1) break;
+        }
+        
+        return .{
+            .value = std.fmt.parseUnsigned(u16, bytes[0..i]),
+            .variant = if (i < bytes.len) std.fmt.parseUnsigned(u16, bytes[i + 1..bytes.len]) else 0,
+        };
+    }
+};
+
+// String identifiers. (example: "minecraft:air")
+pub const ID = struct {
+    namespace: []u8 = "minecraft",
+    name: []u8 = "",
+
+    // "minecraft:air" to { "minecraft", "air" }
+    pub fn fromBytes(bytes: []const u8) ID {
+        var i: usize = 0;
+
+        while (i < bytes.len) : (i += 1) {            
+            if (bytes[i] == ':' and i < bytes.len - 1) break;
+        }
+        
+        return .{
+            .namespace = if (i < bytes.len) bytes[0..i] else "minecraft",
+            .variant = if (i < bytes.len) bytes[i + 1..bytes.len] else bytes[0..bytes.len],
+        };
+    }
+};
 
 pub const Difficulty = enum {
     peaceful,
@@ -24,3 +60,27 @@ pub const Difficulty = enum {
         }
     }
 };
+
+test "NumericalID" {
+    var no_variant = NumericalID.fromBytes("0");
+
+    try std.testing.expect(no_variant.value == 0);
+    try std.testing.expect(no_variant.variant == 0);
+
+    var variant = NumericalID.fromBytes("1:1");
+
+    try std.testing.expect(variant.value == 1);
+    try std.testing.expect(variant.variant == 1);
+}
+
+test "ID" {
+    var no_namespace = ID.fromBytes("air");
+
+    try std.testing.expect(std.mem.eql(u8, no_namespace.namespace, "minecraft"));
+    try std.testing.expect(std.mem.eql(u8, no_namespace.name, "air"));
+
+    var namespace = ID.fromBytes("namespace:name");
+
+    try std.testing.expect(std.mem.eql(u8, namespace.namespace, "namespace"));
+    try std.testing.expect(std.mem.eql(u8, namespace.name, "name"));
+}

@@ -8,10 +8,10 @@ const types = @import("../types.zig");
 
 // SERVERBOUND MESSAGES - client -> server
 
-pub const ServerboundMessage = union(enum) {
-    status: ServerboundStatusMessage,
-    login: ServerboundLoginMessage,
-    play: ServerboundPlayMessage,
+pub const ServerMessage = union(enum) {
+    status: ServerStatusMessage,
+    login: ServerLoginMessage,
+    play: ServerPlayMessage,
 
     const Self = @This();
 
@@ -24,11 +24,11 @@ pub const ServerboundMessage = union(enum) {
     }
 };
 
-pub const ServerboundStatusMessage = union(enum) {};
+pub const ServerStatusMessage = union(enum) {};
 
-pub const ServerboundLoginMessage = union(enum) {};
+pub const ServerLoginMessage = union(enum) {};
 
-pub const ServerboundPlayMessage = union(enum) {
+pub const ServerPlayMessage = union(enum) {
     keep_alive: []u8,
 
     const Self = @This();
@@ -43,10 +43,10 @@ pub const ServerboundPlayMessage = union(enum) {
 
 // CLIENTBOUND MESSAGES - server -> client
 
-pub const ClientboundMessage = union(enum) {
-    status: ClientboundStatusMessage,
-    login: ClientboundLoginMessage,
-    play: ClientboundPlayMessage,
+pub const ClientMessage = union(enum) {
+    status: ClientStatusMessage,
+    login: ClientLoginMessage,
+    play: ClientPlayMessage,
 
     const Self = @This();
 
@@ -59,14 +59,14 @@ pub const ClientboundMessage = union(enum) {
     }
 };
 
-pub const ClientboundStatusMessage = union(enum) {};
+pub const ClientStatusMessage = union(enum) {};
 
-pub const ClientboundLoginMessage = union(enum) {};
+pub const ClientLoginMessage = union(enum) {};
 
-pub const ClientboundPlayMessage = union(enum) {
-    spawn_entity: CBPMSpawnEntity,
-    spawn_exp_orb: CBPMSpawnEXPOrb,
-    spawn_player: CBPMSpawnPlayer,
+pub const ClientPlayMessage = union(enum) {
+    spawn_entity: ClientPlaySpawnEntity,
+    spawn_exp_orb: ClientPlaySpawnEXPOrb,
+    spawn_player: ClientPlaySpawnPlayer,
     keep_alive: []u8,
 
     const Self = @This();
@@ -80,20 +80,21 @@ pub const ClientboundPlayMessage = union(enum) {
     }
 };
 
-// CLIENTBOUND - PLAY - Spawn Entity (all versions)
+// CLIENTBOUND - PLAY - Spawn Entity
 // >107: 0x0E
 // 107+ (1.9.0+): 0x00
 // NOTE: The Spawn (Global/Weather) Entity packet was merged into this packet in 735 (1.16).
 // NOTE: The Spawn (Mob/Living Entity) packet was merged into this packet in 1.19 (759).
 // NOTE: The Spawn Painting packet was merged into this packet in 1.19 (759).
-pub const CBPMSpawnEntity = struct {
+pub const ClientPlaySpawnEntity = struct {
     id: i32,
     uuid: types.UUID,
     typ: i32, // i8/Byte: <404 (1.13.2), i32/VarInt: >=477 (1.14)
     pos: types.Vec3d,
     pitch: u8,
     yaw: u8,
-    head_pitch: u8,
+    head_pitch: u8, // may not be sent
+    head_yaw: u8, // may not be sent
     data: i32,
     velocity: types.Vec3s, // not sent on 47 (1.8.x) if data == 0
     meta: ?types.EntityMeta,
@@ -102,14 +103,14 @@ pub const CBPMSpawnEntity = struct {
 // CLIENTBOUND - PLAY - Spawn Experience Orb
 // >107: 0x11
 // 107+ (1.9.0+): 0x01
-pub const CBPMSpawnEXPOrb = struct {
+pub const ClientPlaySpawnEXPOrb = struct {
     id: i32,
     pos: types.Vec3d, // Serialized as fixed-point numbers on 47 (1.8.x).
     count: i16,
 };
 
 // CLIENTBOUND - PLAY - Spawn Player (0x05)
-pub const CBPMSpawnPlayer = struct {
+pub const ClientPlaySpawnPlayer = struct {
     id: i32,
     uuid: types.UUID,
     pos: types.Vec3d,
@@ -119,13 +120,27 @@ pub const CBPMSpawnPlayer = struct {
 };
 
 // CLIENTBOUND - PLAY - Animation (0x06)
-pub const CBPMAnimation = struct {
+pub const ClientPlayAnimation = struct {
     id: i32,
-    animation: u8,
+    animation: Animation,
+
+    pub fn write(self: ClientPlayAnimation) []u8 {
+        io.packet.writer.writeVarInt(self.id);
+        io.packet.writer.writeUnsignedByte(@as(u8, @enumToInt(self.animation)));
+    }
+};
+
+pub const Animation = enum {
+    swing,
+    damage,
+    leave_bed,
+    swing_offhand,
+    critical,
+    magic_critical,
 };
 
 // CLIENTBOUND - PLAY - Statistics (0x07)
-pub const CBPMStatistics = struct {
+pub const ClientPlayStatistics = struct {
     id: i32,
     animation: u8,
 };

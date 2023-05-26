@@ -5,6 +5,8 @@ const number = @import("number.zig");
 
 const allocator = @import("../global.zig").allocator;
 
+var writer = PacketWriter.init();
+
 pub const ArrayItemType = enum {
     VarNum,
 };
