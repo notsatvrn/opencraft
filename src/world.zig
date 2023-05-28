@@ -6,36 +6,36 @@ pub const NumericalID = struct {
     variant: u16 = 0,
 
     // "1:1" to { 1, 1 }
-    pub fn fromBytes(bytes: []const u8) NumericalID {
+    pub fn fromBytes(bytes: []const u8) !NumericalID {
         var i: usize = 0;
 
-        while (i < bytes.len) : (i += 1) {            
+        while (i < bytes.len) : (i += 1) {
             if (bytes[i] == ':' and i < bytes.len - 1) break;
         }
-        
+
         return .{
-            .value = std.fmt.parseUnsigned(u16, bytes[0..i]),
-            .variant = if (i < bytes.len) std.fmt.parseUnsigned(u16, bytes[i + 1..bytes.len]) else 0,
+            .value = try std.fmt.parseUnsigned(u16, bytes[0..i], 10),
+            .variant = if (i < bytes.len) try std.fmt.parseUnsigned(u16, bytes[i + 1 .. bytes.len], 10) else 0,
         };
     }
 };
 
 // String identifiers. (example: "minecraft:air")
 pub const ID = struct {
-    namespace: []u8 = "minecraft",
-    name: []u8 = "",
+    namespace: []const u8 = "minecraft",
+    name: []const u8 = "",
 
     // "minecraft:air" to { "minecraft", "air" }
     pub fn fromBytes(bytes: []const u8) ID {
         var i: usize = 0;
 
-        while (i < bytes.len) : (i += 1) {            
+        while (i < bytes.len) : (i += 1) {
             if (bytes[i] == ':' and i < bytes.len - 1) break;
         }
-        
+
         return .{
             .namespace = if (i < bytes.len) bytes[0..i] else "minecraft",
-            .variant = if (i < bytes.len) bytes[i + 1..bytes.len] else bytes[0..bytes.len],
+            .name = if (i < bytes.len) bytes[i + 1 .. bytes.len] else bytes[0..bytes.len],
         };
     }
 };
@@ -62,12 +62,12 @@ pub const Difficulty = enum {
 };
 
 test "NumericalID" {
-    var no_variant = NumericalID.fromBytes("0");
+    var no_variant = try NumericalID.fromBytes("0");
 
     try std.testing.expect(no_variant.value == 0);
     try std.testing.expect(no_variant.variant == 0);
 
-    var variant = NumericalID.fromBytes("1:1");
+    var variant = try NumericalID.fromBytes("1:1");
 
     try std.testing.expect(variant.value == 1);
     try std.testing.expect(variant.variant == 1);

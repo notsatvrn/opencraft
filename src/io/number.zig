@@ -181,6 +181,7 @@ fn writeInnerBuf(comptime T: type, value: T, buf: *[@sizeOf(T)]u8, endianness: s
 // std.mem.writeIntBig/Little is not used because it doesn't support floats.
 inline fn writeInnerAlloc(comptime T: type, value: T, endianness: std.builtin.Endian) ![]const u8 {
     var buf = try std.ArrayList(u8).initCapacity(allocator, @sizeOf(T));
+    buf.items.len = @sizeOf(T);
     writeInnerBuf(T, value, @constCast(buf.items[0..@sizeOf(T)]), endianness);
     return buf.toOwnedSlice();
 }

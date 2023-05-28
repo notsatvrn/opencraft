@@ -2,11 +2,81 @@ const std = @import("std");
 
 const number = @import("number.zig");
 
-const allocator = @import("../global.zig").allocator;
+var allocator = @import("../global.zig").allocator;
+
+pub const NBTError = error{
+    InvalidType,
+    InconsistentListType,
+};
 
 // https://wiki.vg/NBT
 // Items in order, starting at 1.
-pub const Value = union(enum) {
+pub const Type = enum {
+    byte,
+    short,
+    int,
+    long,
+    float,
+    double,
+    byte_array,
+    string,
+    list,
+    compound,
+    int_array,
+    long_array,
+
+    pub inline fn fromByte(typ: u8) !Type {
+        if (typ == 0x00 or typ > 0x0C) return NBTError.InvalidType;
+        return @intToEnum(Type, typ - 1);
+    }
+
+    pub inline fn toByte(self: Type) u8 {
+        return @as(u8, @enumToInt(self) + 1);
+    }
+};
+
+pub const ListError = error{
+    InvalidType,
+};
+
+// *sigh*
+pub const ListWIP = struct {
+    inner: std.ArrayList(Tag),
+    typ_name: [:0]const u8,
+
+    pub inline fn init(typ: Type) ListWIP {
+        return .{
+            .inner = std.ArrayList(Tag).init(allocator),
+            .typ_name = @tagName(typ),
+        };
+    }
+
+    pub inline fn initCapacity(typ: Type, num: usize) !ListWIP {
+        return .{
+            .inner = try std.ArrayList(Tag).initCapacity(allocator, num),
+            .typ_name = @tagName(typ),
+        };
+    }
+
+    pub inline fn deinit(self: *ListWIP) void {
+        self.inner.deinit();
+    }
+
+    pub inline fn append(self: *ListWIP, item: Tag) !void {
+        if (!std.mem.eql(u8, @tagName(item), self.typ_name)) return ListError.InvalidType;
+        try self.inner.append(item);
+    }
+
+    pub inline fn appendAssumeCapacity(self: *ListWIP, item: Tag) !void {
+        if (!std.mem.eql(u8, @tagName(item), self.typ_name)) return ListError.InvalidType;
+        self.inner.appendAssumeCapacity(item);
+    }
+};
+
+pub const List = std.ArrayList(Tag);
+pub const Compound = std.StringHashMap(Tag);
+
+pub const Tag = union(Type) {
     byte: i8,
     short: i16,
     int: i32,
@@ -15,116 +85,186 @@ pub const Value = union(enum) {
     double: f64,
     byte_array: []i8,
     string: []const u8,
-    list: std.ArrayList(Value),
-    compound: std.StringHashMap(Value),
+    list: List,
+    compound: Compound,
     int_array: []i32,
     long_array: []i64,
 
-    pub fn getTypeByte(self: Value) u8 {
-        return switch (self) {
-            Value.byte => 0x01,
-            Value.short => 0x02,
-            Value.int => 0x03,
-            Value.long => 0x04,
-            Value.float => 0x05,
-            Value.double => 0x06,
-            Value.byte_array => 0x07,
-            Value.string => 0x08,
-            Value.list => 0x09,
-            Value.compound => 0x0A,
-            Value.int_array => 0x0B,
-            Value.long_array => 0x0C,
-        };
+    pub inline fn deinit(self: *Tag) void {
+        switch (self) {
+            Tag.list => |v| v.deinit(),
+            Tag.compound => |v| v.deinit(),
+            else => {},
+        }
     }
 
-    pub fn getSize(self: Value) usize {
+    pub inline fn typeByte(self: Tag) u8 {
+        return @as(Type, self).toByte();
+    }
+
+    pub fn size(self: Tag) usize {
         return switch (self) {
-            Value.byte => 1,
-            Value.short => 2,
-            Value.int => 4,
-            Value.long => 8,
-            Value.float => 4,
-            Value.double => 8,
-            Value.byte_array => |v| v.len,
-            Value.string => |v| v.len,
-            Value.list => |v| if (v.items.len > 0) v.items[0].getSize() * v.items.len else 0,
-            Value.compound => |v| {
+            Tag.byte => 1,
+            Tag.short => 2,
+            Tag.int => 4,
+            Tag.long => 8,
+            Tag.float => 4,
+            Tag.double => 8,
+            Tag.byte_array => |v| 4 + v.len,
+            Tag.string => |v| 2 + v.len,
+            Tag.list => |v| if (v.items.len > 0) v.items[0].size() * v.items.len else 0,
+            Tag.compound => |v| {
+                var iterator = v.iterator();
                 var total: usize = 0;
-                for (v.iter()) |kv| {
-                    total += kv.key_ptr.len;
-                    total += kv.value_ptr.getSize();
+                while (iterator.next()) |kv| {
+                    // type length + name length + name + tag size + null
+                    total += 1 + 2 + kv.key_ptr.len + kv.value_ptr.size() + 1;
                 }
                 return total;
             },
-            Value.int_array => |v| 4 * v.len,
-            Value.long_array => |v| 8 * v.len,
+            Tag.int_array => |v| 4 + (4 * v.len),
+            Tag.long_array => |v| 4 + (8 * v.len),
         };
     }
 };
 
-pub const Tag = struct {
+pub const NamedTag = struct {
     name: []const u8,
-    value: Value,
+    tag: Tag,
 
-    pub fn read(bytes: []const u8, _: i32) Tag {
-        var typ = bytes[0];
+    pub fn read(bytes: []const u8, _: i32) !NamedTag {
+        var typ = try Type.fromByte(bytes[0]);
         var name_len = @intCast(usize, number.readBig(i16, bytes[1..3]));
         var name = bytes[3 .. 3 + name_len];
-        var value_bytes = bytes[3 + name_len .. bytes.len];
+        var tag_bytes = bytes[3 + name_len .. bytes.len];
 
-        var value: Value = switch (typ) {
-            0x01 => .{ .byte = @intCast(i8, value_bytes[0]) },
-            0x02 => .{ .short = number.readBig(i16, value_bytes[0..2]) },
-            0x03 => .{ .int = number.readBig(i32, value_bytes[0..4]) },
-            0x04 => .{ .long = number.readBig(i64, value_bytes[0..8]) },
-            0x05 => .{ .float = number.readBig(f32, value_bytes[0..4]) },
-            0x06 => .{ .double = number.readBig(f64, value_bytes[0..8]) },
-            0x07 => blk: {
-                var len = @intCast(usize, number.readBig(i32, value_bytes[0..4]));
-                break :blk .{ .byte_array = @ptrCast([]i8, @constCast(value_bytes[4 .. 4 + len])) };
+        var tag: Tag = switch (typ) {
+            Type.byte => .{ .byte = @bitCast(i8, tag_bytes[0]) },
+            Type.short => .{ .short = number.readBig(i16, tag_bytes[0..2]) },
+            Type.int => .{ .int = number.readBig(i32, tag_bytes[0..4]) },
+            Type.long => .{ .long = number.readBig(i64, tag_bytes[0..8]) },
+            Type.float => .{ .float = number.readBig(f32, tag_bytes[0..4]) },
+            Type.double => .{ .double = number.readBig(f64, tag_bytes[0..8]) },
+            Type.byte_array => blk: {
+                var len = @intCast(usize, number.readBig(i32, tag_bytes[0..4]));
+                break :blk .{ .byte_array = @ptrCast([]i8, @constCast(tag_bytes[4 .. 4 + len])) };
             },
-            0x08 => blk: {
-                var len = @intCast(usize, number.readBig(i16, value_bytes[0..2]));
-                break :blk .{ .string = value_bytes[2 .. 2 + len] };
+            Type.string => blk: {
+                var len = @intCast(usize, number.readBig(i16, tag_bytes[0..2]));
+                break :blk .{ .string = tag_bytes[2 .. 2 + len] };
             },
-            else => .{ .byte = 0 }, // TODO
+            Type.list => blk: { // TODO
+                var list = List.init(allocator);
+                break :blk .{ .list = list };
+            },
+            Type.compound => blk: { // TODO
+                var compound = Compound.init(allocator);
+                break :blk .{ .compound = compound };
+            },
+            Type.int_array => blk: {
+                var len = @intCast(usize, number.readBig(i32, tag_bytes[0..4]));
+                break :blk .{ .int_array = @ptrCast([]i32, @constCast(tag_bytes[4 .. 4 + (4 * len)])) };
+            },
+            Type.long_array => blk: {
+                var len = @intCast(usize, number.readBig(i32, tag_bytes[0..4]));
+                break :blk .{ .long_array = @ptrCast([]i64, @constCast(tag_bytes[4 .. 4 + (8 * len)])) };
+            },
         };
 
         return .{
             .name = name,
-            .value = value,
+            .tag = tag,
         };
     }
 
-    pub fn write(self: Tag, _: i32) ![]const u8 {
+    pub fn write(self: NamedTag, version: i32) ![]const u8 {
         // capacity: byte length (for type) + short length (for name length) + name length (for name)
+        // ^^^ add tag size to this but only when initializing (code depends on pre-tag area size)
+        // pre-allocating all of this for improved performance
+        var tag_size = self.tag.size();
         var capacity = 1 + 2 + self.name.len;
-        var buf = try std.ArrayList(u8).initCapacity(allocator, capacity);
+        var buf = try std.ArrayList(u8).initCapacity(allocator, capacity + tag_size);
 
-        buf.appendAssumeCapacity(self.value.getTypeByte());
+        buf.appendAssumeCapacity(self.tag.typeByte());
 
-        number.writeBigBuf(i16, @intCast(i16, @truncate(u16, self.name.len)), @constCast(buf.items[1..3]));
         buf.items.len += 2;
+        number.writeBigBuf(i16, @intCast(i16, @truncate(u16, self.name.len)), @constCast(buf.items[1..3]));
+
         buf.appendSliceAssumeCapacity(self.name);
 
-        switch (self.value) {
-            Value.byte => |v| try buf.append(@intCast(u8, v)),
-            Value.short => |v| number.writeBigBuf(i16, v, @constCast(buf.items[capacity .. capacity + 2])),
-            Value.int => |v| number.writeBigBuf(i32, v, @constCast(buf.items[capacity .. capacity + 4])),
-            Value.long => |v| number.writeBigBuf(i64, v, @constCast(buf.items[capacity .. capacity + 8])),
-            Value.float => |v| number.writeBigBuf(f32, v, @constCast(buf.items[capacity .. capacity + 4])),
-            Value.double => |v| number.writeBigBuf(f64, v, @constCast(buf.items[capacity .. capacity + 8])),
-            Value.byte_array => |v| {
-                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.len)), @constCast(buf.items[capacity .. capacity + 4]));
+        switch (self.tag) {
+            Tag.byte => |v| buf.appendAssumeCapacity(@bitCast(u8, v)),
+            Tag.short => |v| {
+                buf.items.len += 2;
+                number.writeBigBuf(i16, v, @ptrCast(*[2]u8, buf.items[capacity .. capacity + 2]));
+            },
+            Tag.int => |v| {
+                buf.items.len += 4;
+                number.writeBigBuf(i32, v, @ptrCast(*[4]u8, buf.items[capacity .. capacity + 4]));
+            },
+            Tag.long => |v| {
+                buf.items.len += 8;
+                number.writeBigBuf(i64, v, @ptrCast(*[8]u8, buf.items[capacity .. capacity + 8]));
+            },
+            Tag.float => |v| {
+                buf.items.len += 4;
+                number.writeBigBuf(f32, v, @ptrCast(*[4]u8, buf.items[capacity .. capacity + 4]));
+            },
+            Tag.double => |v| {
+                buf.items.len += 8;
+                number.writeBigBuf(f64, v, @ptrCast(*[8]u8, buf.items[capacity .. capacity + 8]));
+            },
+            Tag.byte_array => |v| {
+                buf.items.len += 4;
+                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.len)), @ptrCast(*[4]u8, buf.items[capacity .. capacity + 4]));
                 for (v) |byte| {
-                    try buf.append(@intCast(u8, byte));
+                    buf.appendAssumeCapacity(@bitCast(u8, byte));
                 }
             },
-            Value.string => |v| {
-                number.writeBigBuf(i16, @intCast(i16, @truncate(u16, v.len)), @constCast(buf.items[capacity .. capacity + 2]));
-                try buf.appendSlice(v);
+            Tag.string => |v| {
+                buf.items.len += 2;
+                number.writeBigBuf(i16, @intCast(i16, @truncate(u16, v.len)), @ptrCast(*[2]u8, buf.items[capacity .. capacity + 2]));
+                buf.appendSliceAssumeCapacity(v);
             },
-            else => {}, // TODO
+            Tag.list => |v| {
+                var typ = "";
+
+                for (v.items, 0..) |item, i| {
+                    if (i == 0) {
+                        typ = @tagName(item);
+                    } else if (!std.mem.eql(u8, @tagName(item), typ)) {
+                        return NBTError.InconsistentListType; // TODO: add list type and avoid doing this
+                    }
+                }
+            },
+            Tag.compound => |v| {
+                var iterator = v.iterator();
+
+                while (iterator.next()) |kv| {
+                    buf.appendSliceAssumeCapacity(try (NamedTag{
+                        .name = kv.key_ptr.*,
+                        .tag = kv.value_ptr.*,
+                    }).write(version));
+
+                    buf.appendAssumeCapacity(0);
+                }
+            },
+            Tag.int_array => |v| {
+                buf.items.len += 4;
+                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.len)), @ptrCast(*[4]u8, buf.items[capacity .. capacity + 4]));
+                for (v, 0..) |int, i| {
+                    buf.items.len += 4;
+                    number.writeBigBuf(i32, int, @ptrCast(*[4]u8, buf.items[capacity + (4 * i) .. capacity + 4 + (4 * i)]));
+                }
+            },
+            Tag.long_array => |v| {
+                buf.items.len += 4;
+                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.len)), @ptrCast(*[4]u8, buf.items[capacity .. capacity + 4]));
+                for (v, 0..) |long, i| {
+                    buf.items.len += 8;
+                    number.writeBigBuf(i64, long, @ptrCast(*[8]u8, buf.items[capacity + (8 * i) .. capacity + 8 + (8 * i)]));
+                }
+            },
         }
 
         return buf.toOwnedSlice();
@@ -132,14 +272,24 @@ pub const Tag = struct {
 };
 
 test "serialize and deserialize" {
-    const tag = Tag{
-        .name = "int",
-        .value = .{ .int = 5 },
+    allocator = std.testing.allocator;
+
+    const tag = NamedTag{
+        .name = "compound_example",
+        .tag = .{ .compound = blk: {
+            var compound = Compound.init(allocator);
+            try compound.put("key1", .{ .int = 5 });
+            try compound.put("key2", .{ .long = 10 });
+            break :blk compound;
+        } },
     };
 
+    std.debug.print("{}", .{@intCast(i16, @truncate(u16, @as(usize, 5)))});
+
     var written = try tag.write(0);
-    var read_back = Tag.read(written, 0);
+    var read_back = try NamedTag.read(written, 0);
 
     try std.testing.expect(std.mem.eql(u8, tag.name, read_back.name));
-    try std.testing.expect(read_back.value.int == 5);
+    try std.testing.expect(read_back.tag.compound.get("key1").?.int == 5);
+    try std.testing.expect(read_back.tag.compound.get("key2").?.long == 10);
 }
