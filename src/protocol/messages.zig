@@ -6,62 +6,80 @@ const std = @import("std");
 const io = @import("../io.zig");
 const types = @import("../types.zig");
 
-// SERVERBOUND MESSAGES - client -> server
+// SERVER MESSAGES - client -> server
 
 pub const ServerMessage = union(enum) {
     status: ServerStatusMessage,
     login: ServerLoginMessage,
     play: ServerPlayMessage,
 
-    const Self = @This();
-
-    pub fn write(self: *Self) []u8 {
+    pub fn write(self: ServerMessage) ?[]u8 {
         return switch (self) {
-            Self.status => |v| v.write(),
-            Self.login => |v| v.write(),
-            Self.play => |v| v.write(),
+            ServerMessage.status => |v| v.write(),
+            ServerMessage.login => |v| v.write(),
+            ServerMessage.play => |v| v.write(),
         };
     }
 };
 
-pub const ServerStatusMessage = union(enum) {};
-
-pub const ServerLoginMessage = union(enum) {};
-
-pub const ServerPlayMessage = union(enum) {
-    keep_alive: []u8,
-
-    const Self = @This();
-
-    pub fn write(self: *Self) ?[]u8 {
+pub const ServerStatusMessage = union(enum) {
+    pub fn write(self: ServerStatusMessage) ?[]u8 {
         return switch (self) {
-            Self.keep_alive => |v| io.bytes.appendByteSlices(.{ .{0x00}, v }),
             else => null,
         };
     }
 };
 
-// CLIENTBOUND MESSAGES - server -> client
+pub const ServerLoginMessage = union(enum) {
+    pub fn write(self: ServerLoginMessage) ?[]u8 {
+        return switch (self) {
+            else => null,
+        };
+    }
+};
+
+pub const ServerPlayMessage = union(enum) {
+    keep_alive: []u8,
+
+    pub fn write(self: ServerPlayMessage) ?[]u8 {
+        return switch (self) {
+            ServerPlayMessage.keep_alive => |v| io.bytes.appendByteSlices(.{ .{0x00}, v }),
+            else => null,
+        };
+    }
+};
+
+// CLIENT MESSAGES - server -> client
 
 pub const ClientMessage = union(enum) {
     status: ClientStatusMessage,
     login: ClientLoginMessage,
     play: ClientPlayMessage,
 
-    const Self = @This();
-
-    pub fn write(self: *Self) []u8 {
+    pub fn write(self: ClientMessage) ?[]u8 {
         return switch (self) {
-            Self.status => |v| v.write(),
-            Self.login => |v| v.write(),
-            Self.play => |v| v.write(),
+            ClientMessage.status => |v| v.write(),
+            ClientMessage.login => |v| v.write(),
+            ClientMessage.play => |v| v.write(),
         };
     }
 };
 
-pub const ClientStatusMessage = union(enum) {};
+pub const ClientStatusMessage = union(enum) {
+    pub fn write(self: ClientStatusMessage) ?[]u8 {
+        return switch (self) {
+            else => null,
+        };
+    }
+};
 
-pub const ClientLoginMessage = union(enum) {};
+pub const ClientLoginMessage = union(enum) {
+    pub fn write(self: ClientLoginMessage) ?[]u8 {
+        return switch (self) {
+            else => null,
+        };
+    }
+};
 
 pub const ClientPlayMessage = union(enum) {
     spawn_entity: ClientPlaySpawnEntity,
@@ -69,20 +87,21 @@ pub const ClientPlayMessage = union(enum) {
     spawn_player: ClientPlaySpawnPlayer,
     keep_alive: []u8,
 
-    const Self = @This();
-
-    pub fn write(self: *Self) ?[]u8 {
+    pub fn write(self: ClientPlayMessage) ?[]u8 {
         return switch (self) {
-            Self.keep_alive => |v| io.bytes.appendByteSlices(.{ .{0x00}, v }),
-            Self.spawn_object => |v| v.write(),
+            ClientPlayMessage.spawn_entity => |v| v.write(),
+            ClientPlayMessage.spawn_exp_orb => |v| v.write(),
+            ClientPlayMessage.spawn_player => |v| v.write(),
+            ClientPlayMessage.keep_alive => |v| io.bytes.appendByteSlices(.{ .{0x00}, v }),
             else => null,
         };
     }
 };
 
-// CLIENTBOUND - PLAY - Spawn Entity
+// CLIENT - PLAY - Spawn Entity
 // >107: 0x0E
 // 107+ (1.9.0+): 0x00
+// 762+ (1.19.4): 0x01 (Bundle Delimiter added at 0x00)
 // NOTE: The Spawn (Global/Weather) Entity packet was merged into this packet in 735 (1.16).
 // NOTE: The Spawn (Mob/Living Entity) packet was merged into this packet in 1.19 (759).
 // NOTE: The Spawn Painting packet was merged into this packet in 1.19 (759).
@@ -100,16 +119,20 @@ pub const ClientPlaySpawnEntity = struct {
     meta: ?types.EntityMeta,
 };
 
-// CLIENTBOUND - PLAY - Spawn Experience Orb
+// CLIENT - PLAY - Spawn Experience Orb
 // >107: 0x11
 // 107+ (1.9.0+): 0x01
+// 762+ (1.19.4): 0x02 (Bundle Delimiter added at 0x00)
 pub const ClientPlaySpawnEXPOrb = struct {
     id: i32,
     pos: types.Vec3d, // Serialized as fixed-point numbers on 47 (1.8.x).
     count: i16,
 };
 
-// CLIENTBOUND - PLAY - Spawn Player (0x05)
+// CLIENT - PLAY - Spawn Player
+// <107 (<1.9.0): idk im too lazy to check rn
+// 107-762 (1.9.0-1.19.4): whatever
+// >762 (>1.19.4): 0x03 (Bundle Delimiter added at 0x00)
 pub const ClientPlaySpawnPlayer = struct {
     id: i32,
     uuid: types.UUID,
@@ -119,7 +142,7 @@ pub const ClientPlaySpawnPlayer = struct {
     meta: types.EntityMeta,
 };
 
-// CLIENTBOUND - PLAY - Animation (0x06)
+// CLIENT - PLAY - Animation (0x06)
 pub const ClientPlayAnimation = struct {
     id: i32,
     animation: Animation,
@@ -139,7 +162,7 @@ pub const Animation = enum {
     magic_critical,
 };
 
-// CLIENTBOUND - PLAY - Statistics (0x07)
+// CLIENT - PLAY - Statistics (0x07)
 pub const ClientPlayStatistics = struct {
     id: i32,
     animation: u8,
