@@ -260,13 +260,13 @@ pub const Tag = union(Type) {
         };
     }
 
-    pub fn writeAlloc(self: Tag) ![]const u8 {
+    pub inline fn writeAlloc(self: Tag) ![]const u8 {
         var buf = try allocator.alloc(u8, self.size());
         self.writeBufAssumeLength(buf);
         return buf;
     }
 
-    pub fn writeBuf(self: Tag, buf: []u8) !void {
+    pub inline fn writeBuf(self: Tag, buf: []u8) !void {
         if (buf.len < self.size()) return NBTError.BufferTooSmall;
         self.writeBufAssumeLength(buf);
     }
@@ -291,8 +291,9 @@ pub const Tag = union(Type) {
             },
             Tag.list => |v| {
                 buf[0] = v.typ.toByte();
-                var s: usize = 0;
-                var e: usize = 0;
+                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.inner.items.len)), @ptrCast(*[4]u8, buf[1..5]));
+                var s: usize = 5;
+                var e: usize = s;
                 for (v.inner.items) |item| {
                     e += item.size();
                     item.writeBufAssumeLength(buf[s..e]);
@@ -302,7 +303,7 @@ pub const Tag = union(Type) {
             Tag.compound => |v| {
                 var iterator = v.iterator();
                 var s: usize = 0;
-                var e: usize = 0;
+                var e: usize = s;
                 while (iterator.next()) |kv| {
                     const nt = NamedTag{
                         .name = kv.key_ptr.*,
@@ -312,6 +313,7 @@ pub const Tag = union(Type) {
                     nt.writeBufAssumeLength(buf[s..e]);
                     s = e;
                 }
+                buf[e] = 0;
             },
             Tag.int_array => |v| {
                 number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.len)), @ptrCast(*[4]u8, buf[0..4]));
@@ -342,7 +344,7 @@ pub const NamedTag = struct {
         return self.prefixSize() + self.tag.size();
     }
 
-    pub fn read(bytes: []const u8) !NamedTag {
+    pub inline fn read(bytes: []const u8) !NamedTag {
         var typ = try Type.fromByte(bytes[0]);
         var name_len = @intCast(usize, number.readBig(i16, bytes[1..3]));
 
@@ -358,12 +360,12 @@ pub const NamedTag = struct {
         return buf;
     }
 
-    pub fn writeBuf(self: NamedTag, buf: []u8) !void {
+    pub inline fn writeBuf(self: NamedTag, buf: []u8) !void {
         if (buf.len < self.size()) return NBTError.BufferTooSmall;
         self.writeBufAssumeLength(buf);
     }
 
-    pub fn writeBufAssumeLength(self: NamedTag, buf: []u8) void {
+    pub inline fn writeBufAssumeLength(self: NamedTag, buf: []u8) void {
         buf[0] = self.tag.typeByte();
         number.writeBigBuf(i16, @intCast(i16, @truncate(u16, self.name.len)), @constCast(buf[1..3]));
         for (self.name, 0..) |byte, i| {
@@ -373,16 +375,7 @@ pub const NamedTag = struct {
     }
 };
 
-test "bigtest.nbt" {
-    //allocator = std.testing.allocator;
-
-    var in_stream = std.io.fixedBufferStream(@embedFile("bigtest.nbt"));
-    var gzip_stream = try std.compress.gzip.decompress(allocator, in_stream.reader());
-    defer gzip_stream.deinit();
-    const buf = try gzip_stream.reader().readAllAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(buf);
-    var output = try NamedTag.read(buf);
-
+fn bigtest(output: NamedTag) !void {
     // test - root
     try std.testing.expect(output.tag == Tag.compound);
     try std.testing.expect(output.tag.compound.count() == 11);
@@ -453,6 +446,7 @@ test "bigtest.nbt" {
     try std.testing.expect(list_test_long.list.inner.items[4].long == 15);
 
     // test - "listTest (compound)"
+
     var list_test_compound = output.tag.compound.get("listTest (compound)").?;
     try std.testing.expect(list_test_compound == Tag.list);
     try std.testing.expect(list_test_compound.list.typ == Type.compound);
@@ -518,4 +512,23 @@ test "bigtest.nbt" {
     var short_test = output.tag.compound.get("shortTest").?;
     try std.testing.expect(short_test == Tag.short);
     try std.testing.expect(short_test.short == 32767);
+}
+
+test "bigtest.nbt" {
+    //allocator = std.testing.allocator;
+
+    var in_stream = std.io.fixedBufferStream(@embedFile("bigtest.nbt"));
+    var gzip_stream = try std.compress.gzip.decompress(allocator, in_stream.reader());
+    defer gzip_stream.deinit();
+    const buf = try gzip_stream.reader().readAllAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(buf);
+    var output = try NamedTag.read(buf);
+
+    try bigtest(output);
+
+    const rewritten = try output.writeAlloc();
+    defer allocator.free(rewritten);
+    var rewritten_output = try NamedTag.read(rewritten);
+
+    try bigtest(rewritten_output);
 }
