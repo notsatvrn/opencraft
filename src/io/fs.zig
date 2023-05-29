@@ -2,7 +2,7 @@
 
 const std = @import("std");
 
-const allocator = @import("../global.zig").allocator;
+var allocator = @import("../global.zig").allocator;
 
 // COMMON
 
@@ -55,7 +55,7 @@ pub const File = struct {
         var buf_reader = std.io.bufferedReader(self.file.reader());
         var in_stream = buf_reader.reader();
 
-        return in_stream.readAllAlloc(allocator, 1024 * 1024 * 1024);
+        return in_stream.readAllAlloc(allocator, std.math.maxInt(usize));
     }
 
     pub inline fn close(self: File) void {

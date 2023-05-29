@@ -3,7 +3,7 @@ const std = @import("std");
 const io = @import("io.zig");
 const world = @import("world.zig");
 
-const allocator = @import("global.zig").allocator;
+var allocator = @import("global.zig").allocator;
 
 pub var config: ?Config = null;
 

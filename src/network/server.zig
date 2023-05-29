@@ -3,7 +3,7 @@ const global = @import("../global.zig");
 const network = @import("network");
 
 const Client = @import("network.zig").Client;
-const allocator = @import("util.zig").allocator;
+var allocator = @import("../global.zig").allocator;
 
 const std = @import("std");
 

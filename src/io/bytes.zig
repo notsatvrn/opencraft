@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const allocator = @import("../global.zig").allocator;
+var allocator = @import("../global.zig").allocator;
 
 pub fn appendByteSlices(slices: [][]u8) ![]u8 {
     var arraylist = std.ArrayList(u8).init(allocator);

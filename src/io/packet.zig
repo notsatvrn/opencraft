@@ -3,7 +3,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const number = @import("number.zig");
 
-const allocator = @import("../global.zig").allocator;
+var allocator = @import("../global.zig").allocator;
 
 var writer = PacketWriter.init();
 
@@ -127,3 +127,7 @@ pub const PacketWriter = struct {
         }
     }
 };
+
+test {
+    allocator = std.testing.allocator;
+}

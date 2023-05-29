@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const allocator = @import("../global.zig").allocator;
+var allocator = @import("../global.zig").allocator;
 
 // COMMON
 
@@ -91,40 +91,42 @@ fn readInner(comptime T: type, bytes: []const u8, endianness: std.builtin.Endian
 
 // Write a variable-length integer.
 pub fn writeVarInt(value: i32) ![]const u8 {
-    var output = try std.ArrayList(u8).initCapacity(allocator, 5);
+    var output = try allocator.alloc(u8, 5);
     var tmp = value;
+    var i: usize = 0;
 
-    while (true) {
+    while (i < 5) : (i += 1) {
         if ((tmp & ~SEGMENT_BITS) == 0) {
-            output.appendAssumeCapacity(@truncate(u8, @intCast(u32, tmp)));
+            output[i] = @truncate(u8, @intCast(u32, tmp));
             break;
         }
 
-        output.appendAssumeCapacity(@truncate(u8, @intCast(u32, (tmp & SEGMENT_BITS) | CONTINUE_BIT)));
+        output[i] = @truncate(u8, @intCast(u32, (tmp & SEGMENT_BITS) | CONTINUE_BIT));
 
         tmp = @intCast(i32, @bitCast(u32, tmp) >> 7); // unsigned right shift
     }
 
-    return output.toOwnedSlice();
+    return output;
 }
 
 // Write a variable-length long.
 pub fn writeVarLong(value: i64) ![]const u8 {
-    var output = try std.ArrayList(u8).initCapacity(allocator, 10);
+    var output = try allocator.alloc(u8, 10);
     var tmp = value;
+    var i: usize = 0;
 
-    while (true) {
+    while (i < 10) : (i += 1) {
         if ((tmp & ~SEGMENT_BITS) == 0) {
-            output.appendAssumeCapacity(@truncate(u8, @intCast(u64, tmp)));
+            output[i] = @truncate(u8, @intCast(u64, tmp));
             break;
         }
 
-        output.appendAssumeCapacity(@truncate(u8, @intCast(u64, (tmp & SEGMENT_BITS) | CONTINUE_BIT)));
+        output[i] = @truncate(u8, @intCast(u64, (tmp & SEGMENT_BITS) | CONTINUE_BIT));
 
         tmp = @intCast(i64, @bitCast(u64, tmp) >> 7); // unsigned right shift
     }
 
-    return output.toOwnedSlice();
+    return output;
 }
 
 // Write a fixed-point number. Writes to a buffer.
@@ -180,16 +182,20 @@ fn writeInnerBuf(comptime T: type, value: T, buf: *[@sizeOf(T)]u8, endianness: s
 // Inner function used for writing. Allocates a buffer.
 // std.mem.writeIntBig/Little is not used because it doesn't support floats.
 inline fn writeInnerAlloc(comptime T: type, value: T, endianness: std.builtin.Endian) ![]const u8 {
-    var buf = try std.ArrayList(u8).initCapacity(allocator, @sizeOf(T));
-    buf.items.len = @sizeOf(T);
-    writeInnerBuf(T, value, @constCast(buf.items[0..@sizeOf(T)]), endianness);
-    return buf.toOwnedSlice();
+    var buf = try allocator.alloc(u8, @sizeOf(T));
+    writeInnerBuf(T, value, @ptrCast(*[@sizeOf(T)]u8, buf), endianness);
+    return buf;
 }
 
 // TESTS
 
+test {
+    allocator = std.testing.allocator;
+}
+
 test "read/write VarInt" {
     var written = try writeVarInt(5);
+    defer allocator.free(written);
     var read_back = (try readVarInt(written))[0];
 
     try std.testing.expect(read_back == 5);
@@ -197,6 +203,7 @@ test "read/write VarInt" {
 
 test "read/write VarLong" {
     var written = try writeVarLong(5);
+    defer allocator.free(written);
     var read_back = (try readVarLong(written))[0];
 
     try std.testing.expect(read_back == 5);
@@ -204,6 +211,7 @@ test "read/write VarLong" {
 
 test "read/write fixed-point" {
     var written = try writeFixedPointAlloc(32.0);
+    defer allocator.free(written);
     var read_back = readFixedPoint(written);
 
     try std.testing.expect(read_back == 32.0);
@@ -211,6 +219,7 @@ test "read/write fixed-point" {
 
 test "read/write big-endian" {
     var written = try writeBigAlloc(isize, 5);
+    defer allocator.free(written);
     var read_back = readBig(isize, written);
 
     try std.testing.expect(read_back == 5);
@@ -218,6 +227,7 @@ test "read/write big-endian" {
 
 test "read/write little-endian" {
     var written = try writeLittleAlloc(usize, 5);
+    defer allocator.free(written);
     var read_back = readLittle(usize, written);
 
     try std.testing.expect(read_back == 5);
