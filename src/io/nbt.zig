@@ -1,16 +1,18 @@
-// Heavily documented, fully-featured NBT I/O.
+// Efficient, heavily documented, fully-featured NBT I/O.
+// Specification found here: https://wiki.vg/NBT
 
 const std = @import("std");
-//const mutf8 = @import("mutf8.zig"); // TODO: modified UTF-8
+const mutf8 = @import("mutf8.zig");
 const number = @import("number.zig");
 var allocator = @import("../global.zig").allocator;
 
+// All possible errors which can be encountered while working with NBT data.
 pub const NBTError = error{
     InvalidType, // valid type range: 0x01-0x0C (0x00 is compound end).
     BufferTooSmall,
 };
 
-// https://wiki.vg/NBT
+// All possible NBT tags.
 // Items in the same order they appear in on the wiki page.
 pub const Type = enum {
     byte,
@@ -26,28 +28,27 @@ pub const Type = enum {
     int_array,
     long_array,
 
-    pub fn initialSize(self: Type) usize {
+    // Returns the known minimum amount of bytes taken by a type.
+    pub inline fn initialSize(self: Type) usize {
         return switch (self) {
             Type.byte => 1,
             Type.short => 2,
-            Type.int => 4,
-            Type.long => 8,
-            Type.float => 4,
-            Type.double => 8,
-            Type.byte_array => 4,
-            Type.string => 2,
-            Type.list => 5,
-            Type.compound => 0,
-            Type.int_array => 4,
-            Type.long_array => 4,
+            Type.int, Type.float => 4,
+            Type.long, Type.double => 8,
+            Type.string => 2, // size: 16-bit signed integer
+            Type.list => 5, // type: 1 byte + size: 32-bit signed integer
+            Type.compound => 0, // compounds are dynamically sized
+            else => 4, // arrays | size: 32-bit signed integer
         };
     }
 
+    // Converts byte to type enum.
     pub inline fn fromByte(typ: u8) NBTError!Type {
         if (typ == 0x00 or typ > 0x0C) return NBTError.InvalidType;
         return @intToEnum(Type, typ - 1);
     }
 
+    // Converts type enum to byte.
     pub inline fn toByte(self: Type) u8 {
         return @as(u8, @enumToInt(self) + 1);
     }
@@ -63,57 +64,60 @@ fn readList(bytes: []const u8) anyerror!struct { List, usize } {
     const len = @intCast(usize, number.readBig(i32, bytes[1..5]));
     var list = try List.initCapacity(typ, len);
 
-    if (len == 0) return .{ list, 5 };
+    if (len == 0) return .{ list, 5 }; // if len == 0, return empty regardless of type
 
-    // Start after the type and list length.
-    var s: usize = 5; // start of buffer space to parse.
-    var e: usize = s; // end of buffer space to parse.
-    var i: usize = 0; // current item number.
+    // start after the type and list length
+    var s: usize = 5; // start of buffer space to parse
+    var e: usize = s; // end of buffer space to parse
+    var i: usize = 0; // current item number
 
     // using DynamicList allows us to do stuff like this:
     switch (typ) {
-        Tag.byte, Tag.short, Tag.int, Tag.long, Tag.float, Tag.double => {
-            const size = typ.initialSize();
-            while (i < len) : (i += 1) {
-                e += size;
-                try list.appendAssumeCapacity(try Tag.read(bytes[s..e], typ));
-                s = e;
-            }
-        },
         Tag.byte_array => while (i < len) : (i += 1) {
             const array_len = @intCast(usize, number.readBig(i32, bytes[s .. s + 4]));
+            s += 4;
             e += 4 + array_len;
-            try list.appendAssumeCapacity(try Tag.read(bytes[s..e], typ));
+            try list.appendAssumeCapacity(.{ .byte_array = @ptrCast([]i8, @constCast(bytes[s..e])) });
             s = e;
         },
         Tag.string => while (i < len) : (i += 1) {
             const string_len = @intCast(usize, number.readBig(i16, bytes[s .. s + 2]));
             s += 2; // string length size
             e += 2 + string_len;
-            //try list.appendAssumeCapacity(.{ .string = try mutf8.decode(bytes[s..e]) }); // TODO: modified UTF-8
-            try list.appendAssumeCapacity(.{ .string = bytes[s..e] });
-            s = e;
-        },
-        Tag.int_array, Tag.long_array => {
-            const item_size = @as(usize, if (typ == Tag.int_array) 4 else 8);
-            while (i < len) : (i += 1) {
-                const array_len = @intCast(usize, number.readBig(i32, bytes[s .. s + 4]));
-                e += 4 + (item_size * array_len);
-                try list.appendAssumeCapacity(try Tag.read(bytes[s..e], typ));
-                s = e;
-            }
-        },
-        Type.compound => while (i < len) : (i += 1) {
-            const result = try readCompound(bytes[s..]);
-            e = s + result[1] + 1;
-            try list.appendAssumeCapacity(.{ .compound = result[0] });
+            try list.appendAssumeCapacity(.{ .string = try mutf8.decode(bytes[s..e]) });
             s = e;
         },
         Type.list => while (i < len) : (i += 1) {
             const result = try readList(bytes[s..]);
-            e = s + result[1];
+            e = s + result[1]; // end = start + relative ending
             try list.appendAssumeCapacity(.{ .list = result[0] });
             s = e;
+        },
+        Type.compound => while (i < len) : (i += 1) {
+            const result = try readCompound(bytes[s..]);
+            e = s + result[1] + 1; // end = start + relative ending + null end byte
+            try list.appendAssumeCapacity(.{ .compound = result[0] });
+            s = e;
+        },
+        Tag.int_array => while (i < len) : (i += 1) {
+            const array_len = @intCast(usize, number.readBig(i32, bytes[s .. s + 4]));
+            e += 4 + (4 * array_len);
+            try list.appendAssumeCapacity(try Tag.read(bytes[s..e], typ));
+            s = e;
+        },
+        Tag.long_array => while (i < len) : (i += 1) {
+            const array_len = @intCast(usize, number.readBig(i32, bytes[s .. s + 4]));
+            e += 4 + (8 * array_len);
+            try list.appendAssumeCapacity(try Tag.read(bytes[s..e], typ));
+            s = e;
+        },
+        else => { // number types
+            const size = typ.initialSize();
+            while (i < len) : (i += 1) {
+                e += size;
+                try list.appendAssumeCapacity(try Tag.read(bytes[s..e], typ));
+                s = e;
+            }
         },
     }
 
@@ -127,7 +131,7 @@ fn readCompound(bytes: []const u8) anyerror!struct { Compound, usize } {
     var s: usize = 0; // start of buffer space to parse.
     var e: usize = 0; // end of buffer space to parse.
     while (e < bytes.len and bytes[e] != 0) : (s = e) {
-        const ityp = try Type.fromByte(bytes[s]);
+        const typ = try Type.fromByte(bytes[s]);
         s += 1; // move past type.
         const name_len = @intCast(usize, number.readBig(i16, bytes[s .. s + 2]));
         s += 2; // move past name length.
@@ -135,23 +139,23 @@ fn readCompound(bytes: []const u8) anyerror!struct { Compound, usize } {
         s += name_len; // move past name.
 
         const tag: Tag = blk: {
-            if (ityp != Type.compound and ityp != Type.list) {
-                e = s + switch (ityp) { // end = start + size.
+            if (typ != Type.compound and typ != Type.list) {
+                e = s + switch (typ) { // end = start + size.
                     Tag.byte_array => 4 + @intCast(usize, number.readBig(i32, bytes[s .. s + 4])),
                     Tag.string => 2 + @intCast(usize, number.readBig(i16, bytes[s .. s + 2])),
                     Tag.int_array => 4 + (4 * @intCast(usize, number.readBig(i32, bytes[s .. s + 4]))),
                     Tag.long_array => 4 + (8 * @intCast(usize, number.readBig(i32, bytes[s .. s + 4]))),
-                    else => ityp.initialSize(),
+                    else => typ.initialSize(),
                 };
-                break :blk try Tag.read(bytes[s..e], ityp);
-            } else if (ityp == Type.compound) {
-                const result = try readCompound(bytes[s..]);
-                e = s + result[1] + 1; // end = start + relative ending + null ending byte.
-                break :blk .{ .compound = result[0] };
-            } else {
+                break :blk try Tag.read(bytes[s..e], typ);
+            } else if (typ == Type.list) {
                 const result = try readList(bytes[s..]);
-                e = s + result[1]; // end = start + relative ending.
+                e = s + result[1]; // end = start + relative ending
                 break :blk .{ .list = result[0] };
+            } else {
+                const result = try readCompound(bytes[s..]);
+                e = s + result[1] + 1; // end = start + relative ending + null end byte
+                break :blk .{ .compound = result[0] };
             }
         };
 
@@ -160,6 +164,8 @@ fn readCompound(bytes: []const u8) anyerror!struct { Compound, usize } {
     return .{ compound, e };
 }
 
+// All possible NBT tags, with their values.
+// Items in the same order they appear in on the wiki page.
 pub const Tag = union(Type) {
     byte: i8,
     short: i16,
@@ -174,27 +180,41 @@ pub const Tag = union(Type) {
     int_array: []i32,
     long_array: []i64,
 
-    pub inline fn deinit(self: *Tag) void {
-        switch (self) {
-            Tag.list => |v| v.deinit(),
-            Tag.compound => |v| v.deinit(),
+    // Deinitialize a Tag, freeing its memory.
+    pub fn deinit(self: *Tag) void {
+        switch (self.*) {
+            Tag.list => |_| {
+                for (self.list.inner.items) |*item| {
+                    item.deinit();
+                }
+                self.list.deinit();
+            },
+            Tag.compound => |_| {
+                var iterator = self.compound.valueIterator();
+                while (iterator.next()) |item| {
+                    item.deinit();
+                }
+                self.compound.deinit();
+            },
             else => {},
         }
     }
 
+    // Returns the Tag's type as a byte.
     pub inline fn typeByte(self: Tag) u8 {
         return @as(Type, self).toByte();
     }
 
+    // Returns the Tag's initial size.
     pub inline fn initialSize(self: Tag) usize {
         return @as(Type, self).initialSize();
     }
 
+    // Returns the Tag's full size.
     pub fn size(self: Tag) usize {
         return switch (self) {
             Tag.byte_array => |v| 4 + v.len,
-            //Tag.string => |v| 2 + try mutf8.encode(v).len, TODO: modified UTF-8
-            Tag.string => |v| 2 + v.len,
+            Tag.string => |v| 2 + mutf8.encode(v).len,
             Tag.list => |v| blk: {
                 var total: usize = 1 + 4; // type length + list length
                 for (v.inner.items) |item| {
@@ -217,6 +237,7 @@ pub const Tag = union(Type) {
         };
     }
 
+    // Reads a NamedTag from the provided bytes.
     pub fn read(bytes: []const u8, typ: Type) !Tag {
         return switch (typ) {
             Type.byte => .{ .byte = @bitCast(i8, bytes[0]) },
@@ -226,13 +247,18 @@ pub const Tag = union(Type) {
             Type.float => .{ .float = number.readBig(f32, bytes[0..4]) },
             Type.double => .{ .double = number.readBig(f64, bytes[0..8]) },
             Type.byte_array => blk: {
-                var len = @intCast(usize, number.readBig(i32, bytes[0..4]));
+                const len = @intCast(usize, number.readBig(i32, bytes[0..4]));
                 break :blk .{ .byte_array = @ptrCast([]i8, @constCast(bytes[4 .. 4 + len])) };
+                //var array = try allocator.alloc(i8, len);
+                //var i: usize = 0;
+                //while (i < len) : (i += 1) {
+                //    array[i] = number.readBig(i8, bytes[4 + i .. 4 + (i + 1)]);
+                //}
+                //break :blk .{ .byte_array = array };
             },
             Type.string => blk: {
-                var len = @intCast(usize, number.readBig(i16, bytes[0..2]));
-                //break :blk .{ .string = try mutf8.decode(bytes[2 .. 2 + len]) }; // TODO: modified UTF-8
-                break :blk .{ .string = bytes[2 .. 2 + len] };
+                const len = @intCast(usize, number.readBig(i16, bytes[0..2]));
+                break :blk .{ .string = try mutf8.decode(bytes[2 .. 2 + len]) };
             },
             Type.list => .{ .list = (try readList(bytes))[0] },
             Type.compound => .{ .compound = (try readCompound(bytes))[0] },
@@ -257,17 +283,22 @@ pub const Tag = union(Type) {
         };
     }
 
-    pub inline fn writeAlloc(self: Tag) ![]const u8 {
-        var buf = try allocator.alloc(u8, self.size());
+    // Allocates memory and writes the Tag to it.
+    // Catches and panics on OOM errors as they're the only errors.
+    pub inline fn writeAlloc(self: Tag) []const u8 {
+        var buf = allocator.alloc(u8, self.size()) catch @panic("OOM");
         self.writeBufAssumeLength(buf);
         return buf;
     }
 
+    // Writes to the provided buffer after ensuring buffer is large enough.
     pub inline fn writeBuf(self: Tag, buf: []u8) !void {
         if (buf.len < self.size()) return NBTError.BufferTooSmall;
         self.writeBufAssumeLength(buf);
     }
 
+    // Writes to the provided buffer without ensuring buffer is large enough.
+    // We can assume the buffer is the correct size if calling from writeAlloc.
     pub fn writeBufAssumeLength(self: Tag, buf: []u8) void {
         switch (self) {
             Tag.byte => |v| buf[0] = @bitCast(u8, v),
@@ -281,10 +312,9 @@ pub const Tag = union(Type) {
                 for (v, 0..) |byte, i| buf[4 + i] = @bitCast(u8, byte);
             },
             Tag.string => |v| {
-                number.writeBigBuf(i16, @intCast(i16, @truncate(u16, v.len)), @ptrCast(*[2]u8, buf[0..2]));
-                //const encoded = try mutf8.encode(v); // TODO: modified UTF-8
-                //for (encoded, 0..) |byte, i| buf[2 + i] = byte; // TODO: modified UTF-8
-                for (v, 0..) |byte, i| buf[2 + i] = byte;
+                const encoded = mutf8.encode(v);
+                number.writeBigBuf(i16, @intCast(i16, @truncate(u16, encoded.len)), @ptrCast(*[2]u8, buf[0..2]));
+                for (encoded, 0..) |byte, i| buf[2 + i] = byte;
             },
             Tag.list => |v| {
                 buf[0] = v.typ.toByte();
@@ -328,19 +358,29 @@ pub const Tag = union(Type) {
     }
 };
 
+// An NBT tag, prefixed with a name.
 pub const NamedTag = struct {
     name: []const u8,
     tag: Tag,
 
+    // Deinitialize a NamedTag, freeing its memory.
+    pub inline fn deinit(self: *NamedTag) void {
+        self.tag.deinit();
+    }
+
+    // Returns the NamedTag's prefix size.
+    // byte length (for type) + short length (for name) + name length
     pub inline fn prefixSize(self: NamedTag) usize {
-        // len: byte length (for type) + short length (for name) + name length
         return 1 + 2 + self.name.len;
     }
 
+    // Returns the NamedTag's full size.
+    // prefix size + tag size
     pub inline fn size(self: NamedTag) usize {
         return self.prefixSize() + self.tag.size();
     }
 
+    // Reads a NamedTag from the provided bytes.
     pub inline fn read(bytes: []const u8) !NamedTag {
         var typ = try Type.fromByte(bytes[0]);
         var name_len = @intCast(usize, number.readBig(i16, bytes[1..3]));
@@ -351,17 +391,22 @@ pub const NamedTag = struct {
         };
     }
 
-    pub inline fn writeAlloc(self: NamedTag) ![]const u8 {
-        var buf = try allocator.alloc(u8, self.size());
+    // Allocates memory and writes the NamedTag to it.
+    // Catches and panics on OOM errors as they're the only errors.
+    pub inline fn writeAlloc(self: NamedTag) []const u8 {
+        var buf = allocator.alloc(u8, self.size()) catch @panic("OOM");
         self.writeBufAssumeLength(buf);
         return buf;
     }
 
+    // Writes to the provided buffer after ensuring buffer is large enough.
     pub inline fn writeBuf(self: NamedTag, buf: []u8) !void {
         if (buf.len < self.size()) return NBTError.BufferTooSmall;
         self.writeBufAssumeLength(buf);
     }
 
+    // Writes to the provided buffer without ensuring buffer is large enough.
+    // We can assume the buffer is the correct size if calling from writeAlloc.
     pub inline fn writeBufAssumeLength(self: NamedTag, buf: []u8) void {
         buf[0] = self.tag.typeByte();
         number.writeBigBuf(i16, @intCast(i16, @truncate(u16, self.name.len)), @constCast(buf[1..3]));
@@ -492,8 +537,7 @@ fn bigtest(output: NamedTag) !void {
 
     var string_test = output.tag.compound.get("stringTest").?;
     try std.testing.expect(string_test == Tag.string);
-    //try std.testing.expect(std.mem.eql(u8, string_test.string, "HELLO WORLD THIS IS A TEST STRING \xc5\xc4\xd6!")); // TODO: modified UTF-8
-    try std.testing.expect(std.mem.eql(u8, string_test.string, "HELLO WORLD THIS IS A TEST STRING ÅÄÖ!"));
+    try std.testing.expect(std.mem.eql(u8, string_test.string, "HELLO WORLD THIS IS A TEST STRING \xc5\xc4\xd6!"));
 
     var double_test = output.tag.compound.get("doubleTest").?;
     try std.testing.expect(double_test == Tag.double);
@@ -513,7 +557,7 @@ fn bigtest(output: NamedTag) !void {
 }
 
 test "bigtest.nbt" {
-    //allocator = std.testing.allocator;
+    allocator = std.testing.allocator;
 
     var in_stream = std.io.fixedBufferStream(@embedFile("bigtest.nbt"));
     var gzip_stream = try std.compress.gzip.decompress(allocator, in_stream.reader());
@@ -521,12 +565,14 @@ test "bigtest.nbt" {
     const buf = try gzip_stream.reader().readAllAlloc(allocator, std.math.maxInt(usize));
     defer allocator.free(buf);
     var output = try NamedTag.read(buf);
+    defer output.deinit();
 
     try bigtest(output);
 
-    const rewritten = try output.writeAlloc();
+    const rewritten = output.writeAlloc();
     defer allocator.free(rewritten);
     var rewritten_output = try NamedTag.read(rewritten);
+    defer rewritten_output.deinit();
 
     try bigtest(rewritten_output);
 }

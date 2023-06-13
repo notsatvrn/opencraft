@@ -17,5 +17,5 @@ A non-goal is to achieve 100% compatibility. Protocol implementations will be 10
     - Protocol implementations are based on info from [wiki.vg](https://wiki.vg/).
     - Light engine is based on [PaperMC](https://github.com/PaperMC)'s [Starlight](https://github.com/PaperMC/Starlight).
     - Redstone engine is based on [Space Walker](https://github.com/SpaceWalkerRS)'s [Alternate Current](https://github.com/SpaceWalkerRS/alternate-current).
-    - Modified UTF-8 support is based on [TkTech](https://github.com/TkTech)'s [mutf8](https://github.com/TkTech/mutf8) and [emk](https://github.com/emk)'s [cesu8](https://github.com/emk/cesu8-rs).
+    - Java Modified UTF-8 support is based on [TkTech](https://github.com/TkTech)'s [mutf8](https://github.com/TkTech/mutf8).
     - Please support the people who work on these projects!
