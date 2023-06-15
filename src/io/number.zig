@@ -12,7 +12,8 @@ const native_endian = @import("builtin").cpu.arch.endian();
 // READING
 
 pub const VarNumError = error{
-    too_big,
+    number_too_big,
+    buffer_too_small,
 };
 
 // Read a variable-length integer.
@@ -22,7 +23,7 @@ pub fn readVarInt(bytes: []const u8) !struct { i32, usize } {
     var current: i32 = 0;
 
     while (true) : (length += 1) {
-        if (length > 5) return VarNumError.too_big;
+        if (length > 5) return VarNumError.number_too_big;
 
         current = @intCast(i32, bytes[length]);
         result |= (current & SEGMENT_BITS) << (7 * length);
@@ -40,7 +41,7 @@ pub fn readVarLong(bytes: []const u8) !struct { i64, usize } {
     var current: i64 = 0;
 
     while (true) : (length += 1) {
-        if (length > 10) return VarNumError.too_big;
+        if (length > 10) return VarNumError.number_too_big;
 
         current = @intCast(i64, bytes[length]);
         result |= (current & SEGMENT_BITS) << (7 * length);
@@ -89,15 +90,23 @@ fn readInner(comptime T: type, bytes: []const u8, endianness: std.builtin.Endian
 
 // WRITING
 
-// Write a variable-length integer.
-pub fn writeVarInt(value: i32) ![]const u8 {
-    var output = try allocator.alloc(u8, 5);
+// Write a variable-length integer, allocating a buffer.
+pub fn writeVarIntAlloc(value: i32) []const u8 {
+    var output = std.ArrayList(u8).initCapacity(allocator, 5) catch @panic("OOM");
+    output.items.len = 5;
+    output.items.len = writeVarIntBuf(value, @ptrCast(*[5]u8, output.items[0..]));
+    return output.toOwnedSlice() catch @panic("OOM");
+}
+
+// Write a variable-length integer using a pre-existing buffer.
+pub fn writeVarIntBuf(value: i32, output: *[5]u8) usize {
     var tmp = value;
     var i: usize = 0;
 
     while (i < 5) : (i += 1) {
         if ((tmp & ~SEGMENT_BITS) == 0) {
             output[i] = @truncate(u8, @intCast(u32, tmp));
+            i += 1;
             break;
         }
 
@@ -106,18 +115,26 @@ pub fn writeVarInt(value: i32) ![]const u8 {
         tmp = @intCast(i32, @bitCast(u32, tmp) >> 7); // unsigned right shift
     }
 
-    return output;
+    return i;
 }
 
-// Write a variable-length long.
-pub fn writeVarLong(value: i64) ![]const u8 {
-    var output = try allocator.alloc(u8, 10);
+// Write a variable-length long, allocating a buffer.
+pub fn writeVarLongAlloc(value: i32) []const u8 {
+    var output = std.ArrayList(u8).initCapacity(allocator, 10) catch @panic("OOM");
+    output.items.len = 10;
+    output.items.len = writeVarLongBuf(value, @ptrCast(*[10]u8, output.items[0..]));
+    return output.toOwnedSlice() catch @panic("OOM");
+}
+
+// Write a variable-length long using a pre-existing buffer.
+pub fn writeVarLongBuf(value: i64, output: *[10]u8) usize {
     var tmp = value;
     var i: usize = 0;
 
     while (i < 10) : (i += 1) {
         if ((tmp & ~SEGMENT_BITS) == 0) {
             output[i] = @truncate(u8, @intCast(u64, tmp));
+            i += 1;
             break;
         }
 
@@ -126,16 +143,16 @@ pub fn writeVarLong(value: i64) ![]const u8 {
         tmp = @intCast(i64, @bitCast(u64, tmp) >> 7); // unsigned right shift
     }
 
-    return output;
+    return i;
 }
 
 // Write a fixed-point number. Writes to a buffer.
-pub fn writeFixedPointBuf(value: f32, buf: *[@sizeOf(f32)]u8) ![]const u8 {
+pub fn writeFixedPointBuf(value: f32, buf: *[4]u8) []const u8 {
     return writeBigBuf(i32, @floatToInt(i32, value / 32.0), buf);
 }
 
 // Write a fixed-point number. Allocates a buffer.
-pub fn writeFixedPointAlloc(value: f32) ![]const u8 {
+pub fn writeFixedPointAlloc(value: f32) []const u8 {
     return writeBigAlloc(i32, @floatToInt(i32, value / 32.0));
 }
 
@@ -150,12 +167,12 @@ pub fn writeLittleBuf(comptime T: type, value: T, buf: *[@sizeOf(T)]u8) void {
 }
 
 // Write any number in big-endian format. Allocates a buffer.
-pub fn writeBigAlloc(comptime T: type, value: T) ![]const u8 {
+pub fn writeBigAlloc(comptime T: type, value: T) []const u8 {
     return writeInnerAlloc(T, value, .Big);
 }
 
 // Write any number in little-endian format. Allocates a buffer.
-pub fn writeLittleAlloc(comptime T: type, value: T) ![]const u8 {
+pub fn writeLittleAlloc(comptime T: type, value: T) []const u8 {
     return writeInnerAlloc(T, value, .Little);
 }
 
@@ -181,8 +198,8 @@ fn writeInnerBuf(comptime T: type, value: T, buf: *[@sizeOf(T)]u8, endianness: s
 
 // Inner function used for writing. Allocates a buffer.
 // std.mem.writeIntBig/Little is not used because it doesn't support floats.
-inline fn writeInnerAlloc(comptime T: type, value: T, endianness: std.builtin.Endian) ![]const u8 {
-    var buf = try allocator.alloc(u8, @sizeOf(T));
+inline fn writeInnerAlloc(comptime T: type, value: T, endianness: std.builtin.Endian) []const u8 {
+    var buf = allocator.alloc(u8, @sizeOf(T)) catch @panic("OOM");
     writeInnerBuf(T, value, @ptrCast(*[@sizeOf(T)]u8, buf), endianness);
     return buf;
 }
@@ -194,7 +211,7 @@ test {
 }
 
 test "read/write VarInt" {
-    var written = try writeVarInt(5);
+    var written = writeVarIntAlloc(5);
     defer allocator.free(written);
     var read_back = (try readVarInt(written))[0];
 
@@ -202,7 +219,7 @@ test "read/write VarInt" {
 }
 
 test "read/write VarLong" {
-    var written = try writeVarLong(5);
+    var written = writeVarLongAlloc(5);
     defer allocator.free(written);
     var read_back = (try readVarLong(written))[0];
 
@@ -210,7 +227,7 @@ test "read/write VarLong" {
 }
 
 test "read/write fixed-point" {
-    var written = try writeFixedPointAlloc(32.0);
+    var written = writeFixedPointAlloc(32.0);
     defer allocator.free(written);
     var read_back = readFixedPoint(written);
 
@@ -218,7 +235,7 @@ test "read/write fixed-point" {
 }
 
 test "read/write big-endian" {
-    var written = try writeBigAlloc(isize, 5);
+    var written = writeBigAlloc(isize, 5);
     defer allocator.free(written);
     var read_back = readBig(isize, written);
 
@@ -226,7 +243,7 @@ test "read/write big-endian" {
 }
 
 test "read/write little-endian" {
-    var written = try writeLittleAlloc(usize, 5);
+    var written = writeLittleAlloc(usize, 5);
     defer allocator.free(written);
     var read_back = readLittle(usize, written);
 

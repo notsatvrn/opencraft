@@ -1,7 +1,8 @@
-const std = @import("std");
-
 // Largely based on https://github.com/dmgk/zig-uuid.
 // Some functions also based on https://github.com/AdoptOpenJDK/openjdk-jdk8u/blob/master/jdk/src/share/classes/java/util/UUID.java.
+
+const std = @import("std");
+const io = @import("../io.zig");
 
 pub const Error = error{
     InvalidUUID,
@@ -117,38 +118,6 @@ pub const UUID = struct {
         }
 
         return uuid;
-    }
-
-    // Convert to 2x big-endian 64-bit integers.
-    pub fn toI64Array(self: UUID) [2]i64 {
-        var output = [2]i64{ 0, 0 }; // MSB, LSB
-        var i: usize = 0;
-        while (i < 8) : (i += 1) output[0] = (output[0] << 8) | (self.bytes[i] & 0xff);
-        while (i < 16) : (i += 1) output[1] = (output[1] << 8) | (self.bytes[i] & 0xff);
-        return output;
-    }
-
-    // Serialize to bytes as 2x 64-bit integers.
-    pub fn serialize(self: UUID, _: i32) []u8 {
-        var output = [1]u8{0} ** 16;
-        var ints = self.toI64Array();
-        output[0] = (ints[0] >> 56) & 0xff;
-        output[1] = (ints[0] >> 48) & 0xff;
-        output[2] = (ints[0] >> 40) & 0xff;
-        output[3] = (ints[0] >> 32) & 0xff;
-        output[4] = (ints[0] >> 24) & 0xff;
-        output[5] = (ints[0] >> 16) & 0xff;
-        output[6] = (ints[0] >> 8) & 0xff;
-        output[7] = ints[0] & 0xff;
-        output[8] = (ints[1] >> 56) & 0xff;
-        output[9] = (ints[1] >> 48) & 0xff;
-        output[10] = (ints[1] >> 40) & 0xff;
-        output[11] = (ints[1] >> 32) & 0xff;
-        output[12] = (ints[1] >> 24) & 0xff;
-        output[13] = (ints[1] >> 16) & 0xff;
-        output[14] = (ints[1] >> 8) & 0xff;
-        output[15] = ints[1] & 0xff;
-        return &output;
     }
 };
 

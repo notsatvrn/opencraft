@@ -4,7 +4,8 @@ const zlib = @import("zlib");
 const io = @import("io.zig");
 const network = @import("network.zig");
 
-const messages = @import("protocol/messages.zig");
+const client = @import("protocol/client.zig");
+const server = @import("protocol/server.zig");
 
 const PacketWriter = io.packet.PacketWriter;
 const PacketReader = io.packet.PacketReader;
@@ -28,31 +29,31 @@ pub const State = enum {
 };
 
 pub const MessageHandler = struct {
-    client: network.Client,
+    socket: network.Client,
     state: State = State.handshaking,
     compressing: bool = false,
     version: i32 = 0,
     writer: PacketWriter,
     reader: PacketReader,
 
-    pub fn init(client: network.Client) MessageHandler {
+    pub fn init(socket: network.Client) MessageHandler {
         return .{
-            .client = client,
+            .socket = socket,
             .writer = PacketWriter.init(),
             .reader = PacketReader.init(),
         };
     }
 
-    pub fn sendMessage(self: *MessageHandler, message: messages.ClientboundMessage) !void {
+    pub fn sendMessage(self: *MessageHandler, message: client.Message) !void {
         for (message.write()) |packet| {
-            try self.client.send(packet);
+            try self.socket.send(packet);
         }
     }
 
     // Recieve a message and attempt to use it.
     // If the message cannot be used here, it gets returned to be used elsewhere.
-    pub fn recieveMessage(self: *MessageHandler) !?messages.ServerboundMessage {
-        var message = try self.client.receive();
+    pub fn recieveMessage(self: *MessageHandler) !?client.Message {
+        var message = try self.socket.receive();
         if (message.len == 0) return null;
 
         var id = 0;
@@ -104,5 +105,6 @@ pub const MessageHandler = struct {
 };
 
 test {
-    _ = messages;
+    _ = client;
+    _ = server;
 }

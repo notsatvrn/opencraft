@@ -102,20 +102,20 @@ fn readList(bytes: []const u8) anyerror!struct { List, usize } {
         Tag.int_array => while (i < len) : (i += 1) {
             const array_len = @intCast(usize, number.readBig(i32, bytes[s .. s + 4]));
             e += 4 + (4 * array_len);
-            try list.appendAssumeCapacity(try Tag.read(bytes[s..e], typ));
+            try list.appendAssumeCapacity((try Tag.read(bytes[s..e], typ))[0]);
             s = e;
         },
         Tag.long_array => while (i < len) : (i += 1) {
             const array_len = @intCast(usize, number.readBig(i32, bytes[s .. s + 4]));
             e += 4 + (8 * array_len);
-            try list.appendAssumeCapacity(try Tag.read(bytes[s..e], typ));
+            try list.appendAssumeCapacity((try Tag.read(bytes[s..e], typ))[0]);
             s = e;
         },
         else => { // number types
             const size = typ.initialSize();
             while (i < len) : (i += 1) {
                 e += size;
-                try list.appendAssumeCapacity(try Tag.read(bytes[s..e], typ));
+                try list.appendAssumeCapacity((try Tag.read(bytes[s..e], typ))[0]);
                 s = e;
             }
         },
@@ -147,7 +147,7 @@ fn readCompound(bytes: []const u8) anyerror!struct { Compound, usize } {
                     Tag.long_array => 4 + (8 * @intCast(usize, number.readBig(i32, bytes[s .. s + 4]))),
                     else => typ.initialSize(),
                 };
-                break :blk try Tag.read(bytes[s..e], typ);
+                break :blk (try Tag.read(bytes[s..e], typ))[0];
             } else if (typ == Type.list) {
                 const result = try readList(bytes[s..]);
                 e = s + result[1]; // end = start + relative ending
@@ -180,7 +180,7 @@ pub const Tag = union(Type) {
     int_array: []i32,
     long_array: []i64,
 
-    // Deinitialize a Tag, freeing its memory.
+    // Deinitialize a tag, freeing its memory.
     pub fn deinit(self: *Tag) void {
         switch (self.*) {
             Tag.list => |_| {
@@ -200,17 +200,17 @@ pub const Tag = union(Type) {
         }
     }
 
-    // Returns the Tag's type as a byte.
+    // Returns the tag's type as a byte.
     pub inline fn typeByte(self: Tag) u8 {
         return @as(Type, self).toByte();
     }
 
-    // Returns the Tag's initial size.
+    // Returns the tag's initial size.
     pub inline fn initialSize(self: Tag) usize {
         return @as(Type, self).initialSize();
     }
 
-    // Returns the Tag's full size.
+    // Returns the tag's full size.
     pub fn size(self: Tag) usize {
         return switch (self) {
             Tag.byte_array => |v| 4 + v.len,
@@ -237,18 +237,19 @@ pub const Tag = union(Type) {
         };
     }
 
-    // Reads a NamedTag from the provided bytes.
-    pub fn read(bytes: []const u8, typ: Type) !Tag {
+    // Reads a tag from the provided bytes.
+    // Returns the tag, and the point at which the tag ended.
+    pub fn read(bytes: []const u8, typ: Type) !struct { Tag, usize } {
         return switch (typ) {
-            Type.byte => .{ .byte = @bitCast(i8, bytes[0]) },
-            Type.short => .{ .short = number.readBig(i16, bytes[0..2]) },
-            Type.int => .{ .int = number.readBig(i32, bytes[0..4]) },
-            Type.long => .{ .long = number.readBig(i64, bytes[0..8]) },
-            Type.float => .{ .float = number.readBig(f32, bytes[0..4]) },
-            Type.double => .{ .double = number.readBig(f64, bytes[0..8]) },
+            Type.byte => .{ .{ .byte = @bitCast(i8, bytes[0]) }, 1 },
+            Type.short => .{ .{ .short = number.readBig(i16, bytes[0..2]) }, 2 },
+            Type.int => .{ .{ .int = number.readBig(i32, bytes[0..4]) }, 4 },
+            Type.long => .{ .{ .long = number.readBig(i64, bytes[0..8]) }, 8 },
+            Type.float => .{ .{ .float = number.readBig(f32, bytes[0..4]) }, 4 },
+            Type.double => .{ .{ .double = number.readBig(f64, bytes[0..8]) }, 8 },
             Type.byte_array => blk: {
                 const len = @intCast(usize, number.readBig(i32, bytes[0..4]));
-                break :blk .{ .byte_array = @ptrCast([]i8, @constCast(bytes[4 .. 4 + len])) };
+                break :blk .{ .{ .byte_array = @ptrCast([]i8, @constCast(bytes[4 .. 4 + len])) }, 4 + len };
                 //var array = try allocator.alloc(i8, len);
                 //var i: usize = 0;
                 //while (i < len) : (i += 1) {
@@ -258,10 +259,16 @@ pub const Tag = union(Type) {
             },
             Type.string => blk: {
                 const len = @intCast(usize, number.readBig(i16, bytes[0..2]));
-                break :blk .{ .string = try mutf8.decode(bytes[2 .. 2 + len]) };
+                break :blk .{ .{ .string = try mutf8.decode(bytes[2 .. 2 + len]) }, 2 + len };
             },
-            Type.list => .{ .list = (try readList(bytes))[0] },
-            Type.compound => .{ .compound = (try readCompound(bytes))[0] },
+            Type.list => blk: {
+                const result = try readList(bytes);
+                break :blk .{ .{ .list = result[0] }, result[1] + 1 };
+            },
+            Type.compound => blk: {
+                const result = try readCompound(bytes);
+                break :blk .{ .{ .compound = result[0] }, result[1] + 1 };
+            },
             Type.int_array => blk: {
                 const len = @intCast(usize, number.readBig(i32, bytes[0..4]));
                 var array = try allocator.alloc(i32, len);
@@ -269,7 +276,7 @@ pub const Tag = union(Type) {
                 while (i < len) : (i += 1) {
                     array[i] = number.readBig(i32, bytes[4 + (4 * i) .. 4 + (4 * (i + 1))]);
                 }
-                break :blk .{ .int_array = array };
+                break :blk .{ .{ .int_array = array }, 4 + (4 * len) };
             },
             Type.long_array => blk: {
                 const len = @intCast(usize, number.readBig(i32, bytes[0..4]));
@@ -278,7 +285,7 @@ pub const Tag = union(Type) {
                 while (i < len) : (i += 1) {
                     array[i] = number.readBig(i64, bytes[4 + (8 * i) .. 4 + (8 * (i + 1))]);
                 }
-                break :blk .{ .long_array = array };
+                break :blk .{ .{ .long_array = array }, 4 + (8 * len) };
             },
         };
     }
@@ -363,32 +370,34 @@ pub const NamedTag = struct {
     name: []const u8,
     tag: Tag,
 
-    // Deinitialize a NamedTag, freeing its memory.
+    // Deinitialize a named tag, freeing its memory.
     pub inline fn deinit(self: *NamedTag) void {
         self.tag.deinit();
     }
 
-    // Returns the NamedTag's prefix size.
+    // Returns the named tag's prefix size.
     // byte length (for type) + short length (for name) + name length
     pub inline fn prefixSize(self: NamedTag) usize {
         return 1 + 2 + self.name.len;
     }
 
-    // Returns the NamedTag's full size.
+    // Returns the named tag's full size.
     // prefix size + tag size
     pub inline fn size(self: NamedTag) usize {
         return self.prefixSize() + self.tag.size();
     }
 
-    // Reads a NamedTag from the provided bytes.
-    pub inline fn read(bytes: []const u8) !NamedTag {
-        var typ = try Type.fromByte(bytes[0]);
-        var name_len = @intCast(usize, number.readBig(i16, bytes[1..3]));
+    // Reads a named tag from the provided bytes.
+    // Returns the named tag, and the point at which the named tag ended.
+    pub inline fn read(bytes: []const u8) !struct { NamedTag, usize } {
+        const typ = try Type.fromByte(bytes[0]);
+        const name_len = @intCast(usize, number.readBig(i16, bytes[1..3]));
+        const tag = try Tag.read(bytes[3 + name_len ..], typ);
 
-        return .{
+        return .{ .{
             .name = bytes[3 .. 3 + name_len],
-            .tag = try Tag.read(bytes[3 + name_len ..], typ),
-        };
+            .tag = tag[0],
+        }, 3 + name_len + tag[1] };
     }
 
     // Allocates memory and writes the NamedTag to it.
@@ -564,15 +573,18 @@ test "bigtest.nbt" {
     defer gzip_stream.deinit();
     const buf = try gzip_stream.reader().readAllAlloc(allocator, std.math.maxInt(usize));
     defer allocator.free(buf);
+
     var output = try NamedTag.read(buf);
-    defer output.deinit();
+    defer output[0].deinit();
 
-    try bigtest(output);
+    try std.testing.expect(output[1] == output[0].size());
+    try bigtest(output[0]);
 
-    const rewritten = output.writeAlloc();
+    const rewritten = output[0].writeAlloc();
     defer allocator.free(rewritten);
     var rewritten_output = try NamedTag.read(rewritten);
-    defer rewritten_output.deinit();
+    defer rewritten_output[0].deinit();
 
-    try bigtest(rewritten_output);
+    try std.testing.expect(rewritten_output[1] == rewritten_output[0].size());
+    try bigtest(rewritten_output[0]);
 }
