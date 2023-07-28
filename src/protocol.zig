@@ -7,8 +7,8 @@ const network = @import("network.zig");
 const client = @import("protocol/client.zig");
 const server = @import("protocol/server.zig");
 
-const PacketWriter = io.packet.PacketWriter;
-const PacketReader = io.packet.PacketReader;
+const PacketWriter = io.packet.Writer;
+const PacketReader = io.packet.Reader;
 
 // MESSAGE HANDLER / PARSER
 
@@ -33,14 +33,12 @@ pub const MessageHandler = struct {
     state: State = State.handshaking,
     compressing: bool = false,
     version: i32 = 0,
-    writer: PacketWriter,
-    reader: PacketReader,
+    writer: PacketWriter = PacketWriter.init(0),
+    reader: PacketReader = PacketReader.init(0, ""),
 
     pub fn init(socket: network.Client) MessageHandler {
         return .{
             .socket = socket,
-            .writer = PacketWriter.init(),
-            .reader = PacketReader.init(),
         };
     }
 

@@ -34,7 +34,7 @@ pub const Writer = struct {
     }
 
     pub inline fn writeByte(self: *Writer, b: i8) !void {
-        try self.buffer.append(@as(u8, b));
+        try self.buffer.append(@bitCast(u8, b));
     }
 
     pub inline fn writeUnsignedByte(self: *Writer, ub: u8) !void {
@@ -99,7 +99,7 @@ pub const Writer = struct {
     }
 
     pub inline fn writeUUID(self: *Writer, uuid: types.UUID) !void {
-        try self.buffer.appendSlice(uuid.write(self.version));
+        try self.buffer.appendSlice(uuid.bytes);
     }
 
     pub fn writeArray(self: *Writer, comptime T: type, item_type: ?ArrayItemType, array: []T) !void {
@@ -138,19 +138,27 @@ pub const ReaderError = error{
 };
 
 pub const Reader = struct {
-    version: u16,
-    position: usize,
+    version: u16 = 0,
+    position: usize = 0,
     buffer: std.ArrayList(u8),
 
     pub inline fn init(version: u16, data: []const u8) !Reader {
         return .{
             .version = version,
-            .position = 0,
             .buffer = std.ArrayList(u8).fromOwnedSlice(allocator, data),
         };
     }
 
+    pub inline fn reset(self: *Reader, data: []const u8) void {
+        self.version = 0;
+        self.position = 0;
+        self.buffer.clearRetainingCapacity();
+        self.buffer.appendSlice(data);
+        self.buffer.shrinkAndFree(data.len);
+    }
+
     pub inline fn deinit(self: *Reader) void {
+        self.version = 0;
         self.position = 0;
         self.buffer.deinit();
     }
@@ -325,20 +333,20 @@ pub const Reader = struct {
                 s = e;
             },
             else => if (@hasDecl(T, "read")) {
-                const function_info = @typeInfo(T.read);
-                if (function_info != .Fn) @compileError("bad array item type");
+                const fi = @typeInfo(T.read);
+                if (fi != .Fn) @compileError("bad array item type");
 
-                if (function_info.Fn.params.len == 1) {
-                    if (function_info.Fn.params[0].type != []const u8) @compileError("bad array item type");
-                } else if (function_info.Fn.params.len == 2) {
-                    if (function_info.Fn.params[0].type != u16) @compileError("bad array item type");
-                    if (function_info.Fn.params[1].type != []const u8) @compileError("bad array item type");
+                if (fi.Fn.params.len == 1) {
+                    if (fi.Fn.params[0].type != []const u8) @compileError("bad array item type");
+                } else if (fi.Fn.params.len == 2) {
+                    if (fi.Fn.params[0].type != u16) @compileError("bad array item type");
+                    if (fi.Fn.params[1].type != []const u8) @compileError("bad array item type");
                 } else {
                     @compileError("bad array item type");
                 }
 
                 const result_type = struct { T, usize };
-                const frt = function_info.Fn.return_type;
+                const frt = fi.Fn.return_type;
                 var result: result_type = undefined;
                 if (frt == null) @compileError("bad array item type");
                 const frti = @typeInfo(frt);
