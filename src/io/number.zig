@@ -25,7 +25,7 @@ pub fn readVarInt(bytes: []const u8) !struct { i32, usize } {
     while (true) : (length += 1) {
         if (length > 5) return VarNumError.number_too_big;
 
-        current = @intCast(i32, bytes[length]);
+        current = @intCast(bytes[length]);
         result |= (current & SEGMENT_BITS) << (7 * length);
 
         if ((current & CONTINUE_BIT) == 0) break;
@@ -43,7 +43,7 @@ pub fn readVarLong(bytes: []const u8) !struct { i64, usize } {
     while (true) : (length += 1) {
         if (length > 10) return VarNumError.number_too_big;
 
-        current = @intCast(i64, bytes[length]);
+        current = @intCast(bytes[length]);
         result |= (current & SEGMENT_BITS) << (7 * length);
 
         if ((current & CONTINUE_BIT) == 0) break;
@@ -53,17 +53,17 @@ pub fn readVarLong(bytes: []const u8) !struct { i64, usize } {
 }
 
 // Read a fixed-point number.
-pub fn readFixedPoint(bytes: []const u8) f32 {
-    return @intToFloat(f32, readBig(i32, bytes)) * 32.0;
+pub inline fn readFixedPoint(bytes: []const u8) f32 {
+    return @as(f32, @floatFromInt(readBig(i32, bytes))) * 32.0;
 }
 
 // Read any number in big-endian format.
-pub fn readBig(comptime T: type, bytes: []const u8) T {
+pub inline fn readBig(comptime T: type, bytes: []const u8) T {
     return readInner(T, bytes, .Big);
 }
 
 // Read any number in little-endian format.
-pub fn readLittle(comptime T: type, bytes: []const u8) T {
+pub inline fn readLittle(comptime T: type, bytes: []const u8) T {
     return readInner(T, bytes, .Little);
 }
 
@@ -82,7 +82,7 @@ fn readInner(comptime T: type, bytes: []const u8, endianness: std.builtin.Endian
             output = @constCast(bytes[0..size]).*;
         }
 
-        return @bitCast(T, output);
+        return @bitCast(output);
     } else {
         @compileError("bad input type");
     }
@@ -94,7 +94,7 @@ fn readInner(comptime T: type, bytes: []const u8, endianness: std.builtin.Endian
 pub fn writeVarIntAlloc(value: i32) []const u8 {
     var output = std.ArrayList(u8).initCapacity(allocator, 5) catch @panic("OOM");
     output.items.len = 5;
-    output.items.len = writeVarIntBuf(value, @ptrCast(*[5]u8, output.items[0..]));
+    output.items.len = writeVarIntBuf(value, @ptrCast(output.items[0..]));
     return output.toOwnedSlice() catch @panic("OOM");
 }
 
@@ -105,14 +105,14 @@ pub fn writeVarIntBuf(value: i32, output: *[5]u8) usize {
 
     while (i < 5) : (i += 1) {
         if ((tmp & ~SEGMENT_BITS) == 0) {
-            output[i] = @truncate(u8, @intCast(u32, tmp));
+            output[i] = @intCast(tmp);
             i += 1;
             break;
         }
 
-        output[i] = @truncate(u8, @intCast(u32, (tmp & SEGMENT_BITS) | CONTINUE_BIT));
+        output[i] = @intCast((tmp & SEGMENT_BITS) | CONTINUE_BIT);
 
-        tmp = @intCast(i32, @bitCast(u32, tmp) >> 7); // unsigned right shift
+        tmp = @bitCast(@as(u32, @bitCast(tmp)) >> 7); // unsigned right shift
     }
 
     return i;
@@ -122,7 +122,7 @@ pub fn writeVarIntBuf(value: i32, output: *[5]u8) usize {
 pub fn writeVarLongAlloc(value: i32) []const u8 {
     var output = std.ArrayList(u8).initCapacity(allocator, 10) catch @panic("OOM");
     output.items.len = 10;
-    output.items.len = writeVarLongBuf(value, @ptrCast(*[10]u8, output.items[0..]));
+    output.items.len = writeVarLongBuf(value, @ptrCast(output.items[0..]));
     return output.toOwnedSlice() catch @panic("OOM");
 }
 
@@ -133,46 +133,46 @@ pub fn writeVarLongBuf(value: i64, output: *[10]u8) usize {
 
     while (i < 10) : (i += 1) {
         if ((tmp & ~SEGMENT_BITS) == 0) {
-            output[i] = @truncate(u8, @intCast(u64, tmp));
+            output[i] = @intCast(tmp);
             i += 1;
             break;
         }
 
-        output[i] = @truncate(u8, @intCast(u64, (tmp & SEGMENT_BITS) | CONTINUE_BIT));
+        output[i] = @intCast((tmp & SEGMENT_BITS) | CONTINUE_BIT);
 
-        tmp = @intCast(i64, @bitCast(u64, tmp) >> 7); // unsigned right shift
+        tmp = @bitCast(@as(u64, @bitCast(tmp)) >> 7); // unsigned right shift
     }
 
     return i;
 }
 
 // Write a fixed-point number. Writes to a buffer.
-pub fn writeFixedPointBuf(value: f32, buf: *[4]u8) []const u8 {
-    return writeBigBuf(i32, @floatToInt(i32, value / 32.0), buf);
+pub inline fn writeFixedPointBuf(value: f32, buf: *[4]u8) []const u8 {
+    return writeBigBuf(i32, @intFromFloat(value / 32.0), buf);
 }
 
 // Write a fixed-point number. Allocates a buffer.
-pub fn writeFixedPointAlloc(value: f32) []const u8 {
-    return writeBigAlloc(i32, @floatToInt(i32, value / 32.0));
+pub inline fn writeFixedPointAlloc(value: f32) []const u8 {
+    return writeBigAlloc(i32, @as(i32, @intFromFloat(value / 32.0)));
 }
 
 // Write any number in big-endian format. Writes to a buffer.
-pub fn writeBigBuf(comptime T: type, value: T, buf: *[@sizeOf(T)]u8) void {
+pub inline fn writeBigBuf(comptime T: type, value: T, buf: *[@sizeOf(T)]u8) void {
     return writeInnerBuf(T, value, buf, .Big);
 }
 
 // Write any number in little-endian format. Writes to a buffer.
-pub fn writeLittleBuf(comptime T: type, value: T, buf: *[@sizeOf(T)]u8) void {
+pub inline fn writeLittleBuf(comptime T: type, value: T, buf: *[@sizeOf(T)]u8) void {
     return writeInnerBuf(T, value, buf, .Little);
 }
 
 // Write any number in big-endian format. Allocates a buffer.
-pub fn writeBigAlloc(comptime T: type, value: T) []const u8 {
+pub inline fn writeBigAlloc(comptime T: type, value: T) []const u8 {
     return writeInnerAlloc(T, value, .Big);
 }
 
 // Write any number in little-endian format. Allocates a buffer.
-pub fn writeLittleAlloc(comptime T: type, value: T) []const u8 {
+pub inline fn writeLittleAlloc(comptime T: type, value: T) []const u8 {
     return writeInnerAlloc(T, value, .Little);
 }
 
@@ -183,7 +183,7 @@ fn writeInnerBuf(comptime T: type, value: T, buf: *[@sizeOf(T)]u8, endianness: s
 
     if (type_info == .Int or type_info == .Float) {
         const size = @sizeOf(T);
-        var bytes = @bitCast([size]u8, value);
+        var bytes: [size]u8 = @bitCast(value);
 
         if (native_endian != endianness) {
             var i: usize = size;
@@ -198,9 +198,10 @@ fn writeInnerBuf(comptime T: type, value: T, buf: *[@sizeOf(T)]u8, endianness: s
 
 // Inner function used for writing. Allocates a buffer.
 // std.mem.writeIntBig/Little is not used because it doesn't support floats.
-inline fn writeInnerAlloc(comptime T: type, value: T, endianness: std.builtin.Endian) []const u8 {
-    var buf = allocator.alloc(u8, @sizeOf(T)) catch @panic("OOM");
-    writeInnerBuf(T, value, @ptrCast(*[@sizeOf(T)]u8, buf), endianness);
+fn writeInnerAlloc(comptime T: type, value: T, endianness: std.builtin.Endian) []const u8 {
+    const size = @sizeOf(T);
+    var buf = allocator.alloc(u8, size) catch @panic("OOM");
+    writeInnerBuf(T, value, @as(*[size]u8, @ptrCast(buf)), endianness);
     return buf;
 }
 

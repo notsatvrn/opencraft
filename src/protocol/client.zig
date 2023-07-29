@@ -11,7 +11,7 @@ pub const Message = union(enum) {
     login: LoginMessage,
     play: PlayMessage,
 
-    pub fn write(self: Message) !?[]const u8 {
+    pub fn write(self: Message) !?[][]const u8 {
         return switch (self) {
             Message.status => |v| v.write(),
             Message.login => |v| v.write(),
@@ -21,7 +21,7 @@ pub const Message = union(enum) {
 };
 
 pub const StatusMessage = union(enum) {
-    pub fn write(self: StatusMessage) !?[]const u8 {
+    pub fn write(self: StatusMessage) !?[][]const u8 {
         return switch (self) {
             else => null,
         };
@@ -29,7 +29,7 @@ pub const StatusMessage = union(enum) {
 };
 
 pub const LoginMessage = union(enum) {
-    pub fn write(self: LoginMessage) !?[]const u8 {
+    pub fn write(self: LoginMessage) !?[][]const u8 {
         return switch (self) {
             else => null,
         };
@@ -42,7 +42,7 @@ pub const PlayMessage = union(enum) {
     spawn_player: play.SpawnPlayer,
     keep_alive: []u8,
 
-    pub fn write(self: PlayMessage, writer: *io.packet.PacketWriter, version: u16) !?[]const u8 {
+    pub fn write(self: PlayMessage, writer: *io.packet.PacketWriter, version: u16) !?[][]const u8 {
         return switch (self) {
             PlayMessage.spawn_entity => |v| v.write(writer, version),
             PlayMessage.spawn_exp_orb => |v| v.write(writer, version),

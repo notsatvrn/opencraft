@@ -1,5 +1,11 @@
 const std = @import("std");
 
+pub const blockstates = @import("world/blockstates.zig");
+
+test {
+    _ = blockstates;
+}
+
 // Numerical identifiers. (example: "1:1")
 pub const NumericalID = struct {
     value: u16 = 0,

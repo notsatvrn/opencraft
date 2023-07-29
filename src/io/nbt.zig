@@ -45,12 +45,12 @@ pub const Type = enum {
     // Converts byte to type enum.
     pub inline fn fromByte(typ: u8) NBTError!Type {
         if (typ == 0x00 or typ > 0x0C) return NBTError.InvalidType;
-        return @intToEnum(Type, typ - 1);
+        return @as(Type, @enumFromInt(typ - 1));
     }
 
     // Converts type enum to byte.
     pub inline fn toByte(self: Type) u8 {
-        return @as(u8, @enumToInt(self) + 1);
+        return @as(u8, @intFromEnum(self) + 1);
     }
 };
 
@@ -61,7 +61,7 @@ pub const Compound = std.StringHashMap(Tag);
 // Returns the list, and the point at which the list ended.
 fn readList(bytes: []const u8) anyerror!struct { List, usize } {
     const typ = try Type.fromByte(bytes[0]);
-    const len = @intCast(usize, number.readBig(i32, bytes[1..5]));
+    const len: usize = @intCast(number.readBig(i32, bytes[1..5]));
     var list = try List.initCapacity(typ, len);
 
     if (len == 0) return .{ list, 5 }; // if len == 0, return empty regardless of type
@@ -74,14 +74,14 @@ fn readList(bytes: []const u8) anyerror!struct { List, usize } {
     // using DynamicList allows us to do stuff like this:
     switch (typ) {
         Tag.byte_array => while (i < len) : (i += 1) {
-            const array_len = @intCast(usize, number.readBig(i32, bytes[s .. s + 4]));
+            const array_len: usize = @intCast(number.readBig(i32, bytes[s .. s + 4]));
             s += 4;
             e += 4 + array_len;
-            try list.appendAssumeCapacity(.{ .byte_array = @ptrCast([]i8, @constCast(bytes[s..e])) });
+            try list.appendAssumeCapacity(.{ .byte_array = @as([]i8, @ptrCast(@constCast(bytes[s..e]))) });
             s = e;
         },
         Tag.string => while (i < len) : (i += 1) {
-            const string_len = @intCast(usize, number.readBig(i16, bytes[s .. s + 2]));
+            const string_len: usize = @intCast(number.readBig(i16, bytes[s .. s + 2]));
             s += 2; // string length size
             e += 2 + string_len;
             try list.appendAssumeCapacity(.{ .string = try mutf8.decode(bytes[s..e]) });
@@ -100,13 +100,13 @@ fn readList(bytes: []const u8) anyerror!struct { List, usize } {
             s = e;
         },
         Tag.int_array => while (i < len) : (i += 1) {
-            const array_len = @intCast(usize, number.readBig(i32, bytes[s .. s + 4]));
+            const array_len: usize = @intCast(number.readBig(i32, bytes[s .. s + 4]));
             e += 4 + (4 * array_len);
             try list.appendAssumeCapacity((try Tag.read(bytes[s..e], typ))[0]);
             s = e;
         },
         Tag.long_array => while (i < len) : (i += 1) {
-            const array_len = @intCast(usize, number.readBig(i32, bytes[s .. s + 4]));
+            const array_len: usize = @intCast(number.readBig(i32, bytes[s .. s + 4]));
             e += 4 + (8 * array_len);
             try list.appendAssumeCapacity((try Tag.read(bytes[s..e], typ))[0]);
             s = e;
@@ -133,7 +133,7 @@ fn readCompound(bytes: []const u8) anyerror!struct { Compound, usize } {
     while (e < bytes.len and bytes[e] != 0) : (s = e) {
         const typ = try Type.fromByte(bytes[s]);
         s += 1; // move past type.
-        const name_len = @intCast(usize, number.readBig(i16, bytes[s .. s + 2]));
+        const name_len: usize = @intCast(number.readBig(i16, bytes[s .. s + 2]));
         s += 2; // move past name length.
         var name = bytes[s .. s + name_len];
         s += name_len; // move past name.
@@ -141,10 +141,10 @@ fn readCompound(bytes: []const u8) anyerror!struct { Compound, usize } {
         const tag: Tag = blk: {
             if (typ != Type.compound and typ != Type.list) {
                 e = s + switch (typ) { // end = start + size.
-                    Tag.byte_array => 4 + @intCast(usize, number.readBig(i32, bytes[s .. s + 4])),
-                    Tag.string => 2 + @intCast(usize, number.readBig(i16, bytes[s .. s + 2])),
-                    Tag.int_array => 4 + (4 * @intCast(usize, number.readBig(i32, bytes[s .. s + 4]))),
-                    Tag.long_array => 4 + (8 * @intCast(usize, number.readBig(i32, bytes[s .. s + 4]))),
+                    Tag.byte_array => 4 + @as(usize, @intCast(number.readBig(i32, bytes[s .. s + 4]))),
+                    Tag.string => 2 + @as(usize, @intCast(number.readBig(i16, bytes[s .. s + 2]))),
+                    Tag.int_array => 4 + (4 * @as(usize, @intCast(number.readBig(i32, bytes[s .. s + 4])))),
+                    Tag.long_array => 4 + (8 * @as(usize, @intCast(number.readBig(i32, bytes[s .. s + 4])))),
                     else => typ.initialSize(),
                 };
                 break :blk (try Tag.read(bytes[s..e], typ))[0];
@@ -241,24 +241,24 @@ pub const Tag = union(Type) {
     // Returns the tag, and the point at which the tag ended.
     pub fn read(bytes: []const u8, typ: Type) !struct { Tag, usize } {
         return switch (typ) {
-            Type.byte => .{ .{ .byte = @bitCast(i8, bytes[0]) }, 1 },
+            Type.byte => .{ .{ .byte = @bitCast(bytes[0]) }, 1 },
             Type.short => .{ .{ .short = number.readBig(i16, bytes[0..2]) }, 2 },
             Type.int => .{ .{ .int = number.readBig(i32, bytes[0..4]) }, 4 },
             Type.long => .{ .{ .long = number.readBig(i64, bytes[0..8]) }, 8 },
             Type.float => .{ .{ .float = number.readBig(f32, bytes[0..4]) }, 4 },
             Type.double => .{ .{ .double = number.readBig(f64, bytes[0..8]) }, 8 },
             Type.byte_array => blk: {
-                const len = @intCast(usize, number.readBig(i32, bytes[0..4]));
-                break :blk .{ .{ .byte_array = @ptrCast([]i8, @constCast(bytes[4 .. 4 + len])) }, 4 + len };
+                const len: usize = @intCast(number.readBig(i32, bytes[0..4]));
+                break :blk .{ .{ .byte_array = @ptrCast(@constCast(bytes[4 .. 4 + len])) }, 4 + len };
                 //var array = try allocator.alloc(i8, len);
                 //var i: usize = 0;
                 //while (i < len) : (i += 1) {
                 //    array[i] = number.readBig(i8, bytes[4 + i .. 4 + (i + 1)]);
                 //}
-                //break :blk .{ .byte_array = array };
+                //break :blk .{ .{ .byte_array = array }, 4 + len };
             },
             Type.string => blk: {
-                const len = @intCast(usize, number.readBig(i16, bytes[0..2]));
+                const len: usize = @intCast(number.readBig(i16, bytes[0..2]));
                 break :blk .{ .{ .string = try mutf8.decode(bytes[2 .. 2 + len]) }, 2 + len };
             },
             Type.list => blk: {
@@ -270,7 +270,7 @@ pub const Tag = union(Type) {
                 break :blk .{ .{ .compound = result[0] }, result[1] + 1 };
             },
             Type.int_array => blk: {
-                const len = @intCast(usize, number.readBig(i32, bytes[0..4]));
+                const len: usize = @intCast(number.readBig(i32, bytes[0..4]));
                 var array = try allocator.alloc(i32, len);
                 var i: usize = 0;
                 while (i < len) : (i += 1) {
@@ -279,7 +279,7 @@ pub const Tag = union(Type) {
                 break :blk .{ .{ .int_array = array }, 4 + (4 * len) };
             },
             Type.long_array => blk: {
-                const len = @intCast(usize, number.readBig(i32, bytes[0..4]));
+                const len: usize = @intCast(number.readBig(i32, bytes[0..4]));
                 var array = try allocator.alloc(i64, len);
                 var i: usize = 0;
                 while (i < len) : (i += 1) {
@@ -308,24 +308,24 @@ pub const Tag = union(Type) {
     // We can assume the buffer is the correct size if calling from writeAlloc.
     pub fn writeBufAssumeLength(self: Tag, buf: []u8) void {
         switch (self) {
-            Tag.byte => |v| buf[0] = @bitCast(u8, v),
-            Tag.short => |v| number.writeBigBuf(i16, v, @ptrCast(*[2]u8, buf[0..2])),
-            Tag.int => |v| number.writeBigBuf(i32, v, @ptrCast(*[4]u8, buf[0..4])),
-            Tag.long => |v| number.writeBigBuf(i64, v, @ptrCast(*[8]u8, buf[0..8])),
-            Tag.float => |v| number.writeBigBuf(f32, v, @ptrCast(*[4]u8, buf[0..4])),
-            Tag.double => |v| number.writeBigBuf(f64, v, @ptrCast(*[8]u8, buf[0..8])),
+            Tag.byte => |v| buf[0] = @bitCast(v),
+            Tag.short => |v| number.writeBigBuf(i16, v, @as(*[2]u8, @ptrCast(buf[0..2]))),
+            Tag.int => |v| number.writeBigBuf(i32, v, @as(*[4]u8, @ptrCast(buf[0..4]))),
+            Tag.long => |v| number.writeBigBuf(i64, v, @as(*[8]u8, @ptrCast(buf[0..8]))),
+            Tag.float => |v| number.writeBigBuf(f32, v, @as(*[4]u8, @ptrCast(buf[0..4]))),
+            Tag.double => |v| number.writeBigBuf(f64, v, @as(*[8]u8, @ptrCast(buf[0..8]))),
             Tag.byte_array => |v| {
-                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.len)), @ptrCast(*[4]u8, buf[0..4]));
-                for (v, 0..) |byte, i| buf[4 + i] = @bitCast(u8, byte);
+                number.writeBigBuf(i32, @as(i32, @intCast(v.len)), @as(*[4]u8, @ptrCast(buf[0..4])));
+                for (v, 0..) |byte, i| buf[4 + i] = @as(u8, @bitCast(byte));
             },
             Tag.string => |v| {
                 const encoded = mutf8.encode(v);
-                number.writeBigBuf(i16, @intCast(i16, @truncate(u16, encoded.len)), @ptrCast(*[2]u8, buf[0..2]));
+                number.writeBigBuf(i16, @as(i16, @intCast(encoded.len)), @as(*[2]u8, @ptrCast(buf[0..2])));
                 for (encoded, 0..) |byte, i| buf[2 + i] = byte;
             },
             Tag.list => |v| {
                 buf[0] = v.typ.toByte();
-                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.inner.items.len)), @ptrCast(*[4]u8, buf[1..5]));
+                number.writeBigBuf(i32, @as(i32, @intCast(v.inner.items.len)), @as(*[4]u8, @ptrCast(buf[1..5])));
                 var s: usize = 5;
                 var e: usize = s;
                 for (v.inner.items) |item| {
@@ -350,15 +350,15 @@ pub const Tag = union(Type) {
                 buf[e] = 0;
             },
             Tag.int_array => |v| {
-                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.len)), @ptrCast(*[4]u8, buf[0..4]));
+                number.writeBigBuf(i32, @as(i32, @intCast(v.len)), @as(*[4]u8, @ptrCast(buf[0..4])));
                 for (v, 0..) |int, i| {
-                    number.writeBigBuf(i32, int, @ptrCast(*[4]u8, buf[4 * (i + 1) .. 4 + (4 * (i + 1))]));
+                    number.writeBigBuf(i32, int, @as(*[4]u8, @ptrCast(buf[4 * (i + 1) .. 4 + (4 * (i + 1))])));
                 }
             },
             Tag.long_array => |v| {
-                number.writeBigBuf(i32, @intCast(i32, @truncate(u32, v.len)), @ptrCast(*[4]u8, buf[0..4]));
+                number.writeBigBuf(i32, @as(i32, @intCast(v.len)), @as(*[4]u8, @ptrCast(buf[0..4])));
                 for (v, 0..) |long, i| {
-                    number.writeBigBuf(i64, long, @ptrCast(*[8]u8, buf[8 * (i + 1) .. 8 + (8 * (i + 1))]));
+                    number.writeBigBuf(i64, long, @as(*[8]u8, @ptrCast(buf[8 * (i + 1) .. 8 + (8 * (i + 1))])));
                 }
             },
         }
@@ -391,7 +391,7 @@ pub const NamedTag = struct {
     // Returns the named tag, and the point at which the named tag ended.
     pub inline fn read(bytes: []const u8) !struct { NamedTag, usize } {
         const typ = try Type.fromByte(bytes[0]);
-        const name_len = @intCast(usize, number.readBig(i16, bytes[1..3]));
+        const name_len: usize = @intCast(number.readBig(i16, bytes[1..3]));
         const tag = try Tag.read(bytes[3 + name_len ..], typ);
 
         return .{ .{
@@ -418,7 +418,7 @@ pub const NamedTag = struct {
     // We can assume the buffer is the correct size if calling from writeAlloc.
     pub inline fn writeBufAssumeLength(self: NamedTag, buf: []u8) void {
         buf[0] = self.tag.typeByte();
-        number.writeBigBuf(i16, @intCast(i16, @truncate(u16, self.name.len)), @constCast(buf[1..3]));
+        number.writeBigBuf(i16, @as(i16, @intCast(self.name.len)), @constCast(buf[1..3]));
         for (self.name, 0..) |byte, i| {
             buf[3 + i] = byte;
         }

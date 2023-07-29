@@ -1,5 +1,4 @@
 const std = @import("std");
-const zlib = @import("zlib");
 
 const io = @import("io.zig");
 const network = @import("network.zig");
@@ -35,14 +34,15 @@ pub const MessageHandler = struct {
     version: i32 = 0,
     writer: PacketWriter = PacketWriter.init(0),
     reader: PacketReader = PacketReader.init(0, ""),
+    messages: usize = 0,
 
-    pub fn init(socket: network.Client) MessageHandler {
+    pub inline fn init(socket: network.Client) MessageHandler {
         return .{
             .socket = socket,
         };
     }
 
-    pub fn sendMessage(self: *MessageHandler, message: client.Message) !void {
+    pub inline fn sendMessage(self: *MessageHandler, message: client.Message) !void {
         for (message.write()) |packet| {
             try self.socket.send(packet);
         }
@@ -81,10 +81,6 @@ pub const MessageHandler = struct {
                     self.state = State.login;
                 } else {
                     return RecieveMessageError.bad_state;
-                }
-
-                if (version_data[0] != 47) {
-                    // TODO: unsupported version.
                 }
             },
             0xFE => if (message[1] == 0x01) { // 1.4-1.6

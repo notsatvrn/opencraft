@@ -34,7 +34,7 @@ pub const Writer = struct {
     }
 
     pub inline fn writeByte(self: *Writer, b: i8) !void {
-        try self.buffer.append(@bitCast(u8, b));
+        try self.buffer.append(@bitCast(b));
     }
 
     pub inline fn writeUnsignedByte(self: *Writer, ub: u8) !void {
@@ -175,7 +175,7 @@ pub const Reader = struct {
 
     pub inline fn readByte(self: *Reader) !i8 {
         try self.advance(1);
-        return @bitCast(i8, self.buffer.items[self.position - 1]);
+        return @bitCast(self.buffer.items[self.position - 1]);
     }
 
     pub inline fn readUnsignedByte(self: *Reader) !u8 {
@@ -284,7 +284,7 @@ pub const Reader = struct {
                 s += 1;
             },
             i8 => while (i < size) : (i += 1) {
-                output[i] = @bitCast(i8, self.buffer.items[s]);
+                output[i] = @bitCast(self.buffer.items[s]);
                 s += 1;
             },
             u8 => output = self.buffer.items[self.position - size .. self.position],

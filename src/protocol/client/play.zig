@@ -24,7 +24,7 @@ pub const ClientPlaySpawnEntity = packed struct {
     velocity: types.Vec3s, // not sent on 47 (1.8.x) if data == 0
     meta: ?types.EntityMeta,
 
-    pub fn write(self: ClientPlaySpawnEntity, writer: *io.packet.PacketWriter, version: u16) ![]const u8 {
+    pub fn write(self: ClientPlaySpawnEntity, writer: *io.packet.PacketWriter, version: u16) ![][]const u8 {
         _ = self;
         if (version < 107) {
             try writer.writeUnsignedByte(0x0E);
@@ -33,7 +33,7 @@ pub const ClientPlaySpawnEntity = packed struct {
         } else { // >= 762
             try writer.writeUnsignedByte(0x01);
         }
-        return writer.finish();
+        return &[_][]const u8{writer.finish()};
     }
 };
 
@@ -46,7 +46,7 @@ pub const ClientPlaySpawnEXPOrb = packed struct {
     pos: types.Vec3d, // fixed-point number: <=47
     count: i16,
 
-    pub fn write(self: ClientPlaySpawnEXPOrb, writer: *io.packet.PacketWriter, version: u16) ![]const u8 {
+    pub fn write(self: ClientPlaySpawnEXPOrb, writer: *io.packet.PacketWriter, version: u16) ![][]const u8 {
         _ = self;
         if (version < 107) {
             try writer.writeUnsignedByte(0x11);
@@ -55,7 +55,7 @@ pub const ClientPlaySpawnEXPOrb = packed struct {
         } else { // >= 762
             try writer.writeUnsignedByte(0x04);
         }
-        return writer.finish();
+        return &[_][]const u8{writer.finish()};
     }
 };
 
@@ -71,7 +71,7 @@ pub const ClientPlaySpawnPlayer = packed struct {
     yaw: u8,
     meta: types.EntityMeta,
 
-    pub fn write(self: ClientPlaySpawnPlayer, writer: *io.packet.PacketWriter, version: u16) ![]const u8 {
+    pub fn write(self: ClientPlaySpawnPlayer, writer: *io.packet.PacketWriter, version: u16) ![][]const u8 {
         _ = self;
         if (version < 107) {
             try writer.writeUnsignedByte(0x06);
@@ -80,7 +80,7 @@ pub const ClientPlaySpawnPlayer = packed struct {
         } else { // >= 762
             try writer.writeUnsignedByte(0x03);
         }
-        return writer.finish();
+        return &[_][]const u8{writer.finish()};
     }
 };
 
@@ -91,7 +91,7 @@ pub const ClientPlayAnimation = packed struct {
     id: i32,
     animation: Animation,
 
-    pub fn write(self: ClientPlayAnimation, writer: *io.packet.PacketWriter, version: u16) ![]const u8 {
+    pub fn write(self: ClientPlayAnimation, writer: *io.packet.PacketWriter, version: u16) ![][]const u8 {
         if (version < 50) {
             try writer.writeUnsignedByte(0x0B);
         } else { // >= 762
@@ -99,8 +99,8 @@ pub const ClientPlayAnimation = packed struct {
         }
 
         try writer.writeVarInt(self.id);
-        try writer.writeUnsignedByte(@as(u8, @enumToInt(self.animation)));
-        return writer.finish();
+        try writer.writeUnsignedByte(@as(u8, @intFromEnum(self.animation)));
+        return &[_][]const u8{writer.finish()};
     }
 };
 

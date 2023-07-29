@@ -8,10 +8,6 @@ pub fn build(b: *std.Build) anyerror!void {
         .source_file = .{ .path = "deps/zig-network/network.zig" },
     });
 
-    const zlib = b.addModule("zlib", .{
-        .source_file = .{ .path = "deps/zlib.zig" },
-    });
-
     const exe = b.addExecutable(.{
         .name = "opencraft",
         .root_source_file = .{ .path = "src/main.zig" },
@@ -20,7 +16,6 @@ pub fn build(b: *std.Build) anyerror!void {
     });
 
     exe.addModule("network", network);
-    exe.addModule("zlib", zlib);
     b.installArtifact(exe);
 
     // RUN

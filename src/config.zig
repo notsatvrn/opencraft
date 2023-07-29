@@ -105,13 +105,13 @@ pub fn load() !void {
 
     config = Config{};
 
-    if (!io.fs.File.exists("config.json")) {
+    if (!io.fs.exists("config.json")) {
         var string = std.ArrayList(u8).init(allocator);
         defer string.deinit();
 
         try std.json.stringify(config.?, .{ .whitespace = .{} }, string.writer());
 
-        (try io.fs.File.createWithContents("config.json", try string.toOwnedSlice())).close();
+        (try io.fs.File.newWithContents("config.json", try string.toOwnedSlice())).close();
     } else {
         var file = try io.fs.File.open("config.json");
         defer file.close();

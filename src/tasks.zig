@@ -21,39 +21,39 @@ pub const TaskExecutor = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator, tps: usize) Self {
+    pub inline fn init(allocator: Allocator, tps: usize) Self {
         return .{
             .allocator = allocator,
             .initial = std.ArrayList(Task).init(allocator),
             .pending = std.ArrayList(Task).init(allocator),
             .final = std.ArrayList(Task).init(allocator),
-            .nspt = (ns_per_s / @intCast(u64, tps)),
+            .nspt = (ns_per_s / @as(u64, tps)),
         };
     }
 
-    pub fn addInitialTask(self: *Self, task: Task) !void {
+    pub inline fn addInitialTask(self: *Self, task: Task) !void {
         try self.initial.append(task);
     }
 
-    pub fn addTask(self: *Self, task: Task) !void {
+    pub inline fn addTask(self: *Self, task: Task) !void {
         try self.pending.append(task);
     }
 
-    pub fn addFinalTask(self: *Self, task: Task) !void {
+    pub inline fn addFinalTask(self: *Self, task: Task) !void {
         try self.final.append(task);
     }
 
-    pub fn setTPS(self: *Self, tps: usize) void {
-        self.nspt = (ns_per_s / @intCast(u64, tps));
+    pub inline fn setTPS(self: *Self, tps: usize) void {
+        self.nspt = (ns_per_s / @as(u64, tps));
     }
 
     pub fn tick(self: *Self) !void {
         var timer = Timer.start();
 
-        var delta = @intCast(i128, self.nspt) - @intCast(i128, timer.read());
+        var delta = @as(i128, self.nspt) - @as(i128, timer.read());
 
         if (delta > 0) {
-            sleep(@intCast(u64, delta));
+            sleep(@intCast(delta));
         } else {}
 
         self.tick += 1;

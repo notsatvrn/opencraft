@@ -44,7 +44,7 @@ pub fn decode(bytes: []const u8) ![]const u8 {
                 const b6 = bytes[i + 4];
 
                 if (b4 == 0xED and (b5 & 0xF0) == 0xB0) {
-                    output.appendAssumeCapacity(@truncate(u8, @as(usize, 0x10000) |
+                    output.appendAssumeCapacity(@intCast(@as(usize, 0x10000) |
                         @as(usize, b2 & 0x0F) << 0x10 |
                         @as(usize, b3 & 0x3F) << 0x0A |
                         @as(usize, b5 & 0x0F) << 0x06 |
@@ -54,7 +54,7 @@ pub fn decode(bytes: []const u8) ![]const u8 {
                 }
             }
 
-            output.appendAssumeCapacity(@truncate(u8, @as(usize, b1 & 0x0F) << 0x0C |
+            output.appendAssumeCapacity(@intCast(@as(usize, b1 & 0x0F) << 0x0C |
                 @as(usize, b2 & 0x3F) << 0x06 |
                 @as(usize, b3 & 0x3F)));
             i += 2;
