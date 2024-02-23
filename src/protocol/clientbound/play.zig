@@ -1,7 +1,7 @@
 // Based on the latest stable version of the protocol: https://wiki.vg/Protocol
 
 const std = @import("std");
-const io = @import("../../io.zig");
+const fmt = @import("../../fmt.zig");
 const types = @import("../../types.zig");
 
 // Spawn Entity
@@ -24,7 +24,7 @@ pub const ClientPlaySpawnEntity = packed struct {
     velocity: types.Vec3s, // not sent on 47 (1.8.x) if data == 0
     meta: ?types.EntityMeta,
 
-    pub fn write(self: ClientPlaySpawnEntity, writer: *io.packet.PacketWriter, version: u16) ![][]const u8 {
+    pub fn write(self: ClientPlaySpawnEntity, writer: *fmt.packet.PacketWriter, version: u16) ![][]const u8 {
         _ = self;
         if (version < 107) {
             try writer.writeUnsignedByte(0x0E);
@@ -46,7 +46,7 @@ pub const ClientPlaySpawnEXPOrb = packed struct {
     pos: types.Vec3d, // fixed-point number: <=47
     count: i16,
 
-    pub fn write(self: ClientPlaySpawnEXPOrb, writer: *io.packet.PacketWriter, version: u16) ![][]const u8 {
+    pub fn write(self: ClientPlaySpawnEXPOrb, writer: *fmt.packet.PacketWriter, version: u16) ![][]const u8 {
         _ = self;
         if (version < 107) {
             try writer.writeUnsignedByte(0x11);
@@ -71,7 +71,7 @@ pub const ClientPlaySpawnPlayer = packed struct {
     yaw: u8,
     meta: types.EntityMeta,
 
-    pub fn write(self: ClientPlaySpawnPlayer, writer: *io.packet.PacketWriter, version: u16) ![][]const u8 {
+    pub fn write(self: ClientPlaySpawnPlayer, writer: *fmt.packet.PacketWriter, version: u16) ![][]const u8 {
         _ = self;
         if (version < 107) {
             try writer.writeUnsignedByte(0x06);
@@ -91,7 +91,7 @@ pub const ClientPlayAnimation = packed struct {
     id: i32,
     animation: Animation,
 
-    pub fn write(self: ClientPlayAnimation, writer: *io.packet.PacketWriter, version: u16) ![][]const u8 {
+    pub fn write(self: ClientPlayAnimation, writer: *fmt.packet.PacketWriter, version: u16) ![][]const u8 {
         if (version < 50) {
             try writer.writeUnsignedByte(0x0B);
         } else { // >= 762

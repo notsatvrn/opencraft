@@ -1,21 +1,30 @@
-# `opencraft`
+# opencraft
 An open-source Minecraft reimplementation.
 
-NOTE: This project is HIGHLY EXPERIMENTAL! Nothing works yet. Don't even think for a second about using this in production. You'd be insane.
+## ⚠️ opencraft is NOT production ready. ⚠️
 
-## The Goal
-The goal is to achieve a high performance, multi-version, cleanroom reimplementation of a Minecraft server (and potentially client).
+If you use opencraft, *expect to encounter issues*, and please report them.
 
-A non-goal is to achieve 100% compatibility. Protocol implementations will be 100% compatible, but some behavior may be different from vanilla Minecraft.
+## Goals
+- [ ] Performance
+    - opencraft should be faster than standard Minecraft.
+    - As we're using Zig, this is already easier out of the gate than if we used Java, but we still have to keep it in mind.
+    - Asynchronous execution & multi-threading should be used wherever possible *and sensible.*
+- [ ] Minimalism
+    - It should be easy to understand how opencraft functions.
+- [ ] Multi-version support
+    - opencraft should support *all* versions from 1.7.10 - 1.12.2.
+    - Snapshots and older versions can be added once these are stable.
+    - 1.13+ is currently not planned.
+    - Currently, best-effort support is provided for 1.8.x & 1.12.2.
 
-## Features
-- Multi-version support (like ViaVersion).
-    - We aim to support all versions from 1.7.2 to the latest.
-- Multi-threading.
-- Disables 1.19 chat reporting.
-- Uses tried and true open-source alternatives to Mojang's private code.
-    - Protocol implementations are based on info from [wiki.vg](https://wiki.vg/).
-    - Light engine is based on [PaperMC](https://github.com/PaperMC)'s [Starlight](https://github.com/PaperMC/Starlight).
-    - Redstone engine is based on [Space Walker](https://github.com/SpaceWalkerRS)'s [Alternate Current](https://github.com/SpaceWalkerRS/alternate-current).
-    - Java Modified UTF-8 support is based on [TkTech](https://github.com/TkTech)'s [mutf8](https://github.com/TkTech/mutf8).
-    - Please support the people who work on these projects!
+## Non-Goals
+- [ ] 100% vanilla gameplay parity
+    - Protocol implementations should absolutely be 100% accurate. Gameplay is a different story.
+
+## Credits
+opencraft would not be possible without the following projects.
+
+- Protocol implementations are based on info from [wiki.vg](https://wiki.vg/).
+- Light engine is based on [Starlight](https://github.com/PaperMC/Starlight).
+- Redstone engine is based on [Alternate Current](https://github.com/SpaceWalkerRS/alternate-current).

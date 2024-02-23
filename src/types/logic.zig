@@ -24,13 +24,24 @@ pub const Direction = enum {
     east,
     south,
     west,
+    down,
+    up,
 };
 
-pub const DirectionWithY = enum {
+pub const DirectionXZ = enum {
     north,
     east,
     south,
     west,
-    down,
-    up,
+
+    const Self = @This();
+
+    pub inline fn toDirection(self: Self) Direction {
+        return switch (self) {
+            Self.north => Direction.north,
+            Self.east => Direction.east,
+            Self.south => Direction.south,
+            Self.west => Direction.west,
+        };
+    }
 };

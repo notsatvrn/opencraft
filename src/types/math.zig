@@ -1,5 +1,5 @@
 const std = @import("std");
-const io = @import("../io.zig");
+const fmt = @import("../fmt.zig");
 
 pub const Vec3d = packed struct {
     x: f64,
@@ -33,15 +33,15 @@ pub const Vec3i = packed struct {
         return .{ .x = x, .y = y, .z = z };
     }
 
-    pub fn write(self: Vec3i, version: u16) []const u8 {
-        return io.number.writeBigAlloc(i64, blk: {
+    pub fn writeAlloc(self: Vec3i, version: u16) ![]const u8 {
+        return fmt.number.writeBigAlloc(i64, blk: {
             if (version < 477) break :blk ((self.x & 0x3FFFFFF) << 38) | ((self.y & 0xFFF) << 26) | (self.z & 0x3FFFFFF);
             break :blk ((self.x & 0x3FFFFFF) << 38) | ((self.z & 0x3FFFFFF) << 12) | (self.y & 0xFFF);
         });
     }
 
     pub fn read(version: u16, bytes: []const u8) Vec3i {
-        const value = io.number.readBig(i64, bytes);
+        const value = fmt.number.readBig(i64, bytes);
         return .{
             .x = value >> 38,
             .y = if (version < 477) (value >> 26) & 0xFFF else value << 52 >> 52,

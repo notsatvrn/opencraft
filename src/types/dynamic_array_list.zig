@@ -1,15 +1,11 @@
 const std = @import("std");
 
-var allocator = @import("../global.zig").allocator;
-
-pub const DynamicListError = error{
-    InvalidType,
-};
+var allocator = @import("../util.zig").allocator;
 
 // Complete wrapper around std.ArrayList with dynamic union/enum type checking.
 // Allows one to have an ArrayList with a union value and only one possible field for all items.
 // Due to https://github.com/ziglang/zig/issues/13760, we cannot pull the enum type from the union.
-pub fn DynamicList(comptime Union: type, comptime Enum: type) type {
+pub fn DynamicArrayList(comptime Union: type, comptime Enum: type) type {
     const Inner = std.ArrayList(Union);
 
     return struct {
@@ -17,6 +13,10 @@ pub fn DynamicList(comptime Union: type, comptime Enum: type) type {
         typ: Enum,
 
         const Self = @This();
+
+        pub const Error = error{
+            InvalidType,
+        };
 
         pub inline fn init(typ: Enum) Self {
             return .{
@@ -37,7 +37,7 @@ pub fn DynamicList(comptime Union: type, comptime Enum: type) type {
         }
 
         pub inline fn fromOwnedSlice(typ: Enum, slice: Inner.Slice) !Self {
-            for (slice) |item| if (@as(Enum, item) != typ) return DynamicListError.InvalidType;
+            for (slice) |item| if (@as(Enum, item) != typ) return Error.InvalidType;
 
             return .{
                 .inner = Inner.fromOwnedSlice(allocator, slice),
@@ -46,7 +46,7 @@ pub fn DynamicList(comptime Union: type, comptime Enum: type) type {
         }
 
         pub inline fn fromOwnedSliceSentinel(typ: Enum, comptime sentinel: Union, slice: [:sentinel]Union) !Self {
-            for (slice) |item| if (@as(Enum, item) != typ) return DynamicListError.InvalidType;
+            for (slice) |item| if (@as(Enum, item) != typ) return Error.InvalidType;
 
             return .{
                 .inner = Inner.fromOwnedSliceSentinel(allocator, sentinel, slice),
@@ -70,12 +70,12 @@ pub fn DynamicList(comptime Union: type, comptime Enum: type) type {
         }
 
         pub inline fn append(self: *Self, item: Union) anyerror!void {
-            if (@as(Enum, item) != self.typ) return DynamicListError.InvalidType;
+            if (@as(Enum, item) != self.typ) return Error.InvalidType;
             try self.inner.append(item);
         }
 
         pub inline fn appendAssumeCapacity(self: *Self, item: Union) anyerror!void {
-            if (@as(Enum, item) != self.typ) return DynamicListError.InvalidType;
+            if (@as(Enum, item) != self.typ) return Error.InvalidType;
             self.inner.appendAssumeCapacity(item);
         }
     };

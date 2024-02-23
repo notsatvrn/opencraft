@@ -2,22 +2,34 @@
 // Some functions also based on https://github.com/AdoptOpenJDK/openjdk-jdk8u/blob/master/jdk/src/share/classes/java/util/UUID.java.
 
 const std = @import("std");
-const io = @import("../io.zig");
-
-pub const Error = error{
-    InvalidUUID,
-};
 
 pub const UUID = struct {
     bytes: [16]u8,
 
+    // Initialize a UUID from a 128-bit integer.
+    pub inline fn initFromInteger(int: u128) UUID {
+        return UUID{ .bytes = @bitCast(int) };
+    }
+
     // Initialize a UUID from an array of bytes by hashing them with MD5 (UUID v3).
-    pub fn initFromBytes(bytes: []const u8) UUID {
+    pub fn initFromBytesMd5(bytes: []const u8) UUID {
         var uuid = UUID{ .bytes = undefined };
 
         std.crypto.hash.Md5.hash(bytes, &uuid.bytes, .{});
 
         uuid.bytes[6] = (uuid.bytes[6] & 0x0f) | 0x30;
+        uuid.bytes[8] = (uuid.bytes[8] & 0x3f) | 0x80;
+
+        return uuid;
+    }
+
+    // Initialize a UUID from an array of bytes by hashing them with SHA-1 (UUID v5).
+    pub fn initFromBytesSha1(bytes: []const u8) UUID {
+        const buf: [20]u8 = undefined;
+        std.crypto.hash.Sha1.hash(bytes, &buf, .{});
+
+        var uuid = UUID{ .bytes = buf[0..16] };
+        uuid.bytes[6] = (uuid.bytes[6] & 0x0f) | 0x50;
         uuid.bytes[8] = (uuid.bytes[8] & 0x3f) | 0x80;
 
         return uuid;
@@ -102,18 +114,16 @@ pub const UUID = struct {
     }
 
     // Parse UUID from string.
-    pub fn parse(buf: []const u8) Error!UUID {
+    pub fn parse(buf: []const u8) !UUID {
         var uuid = UUID{ .bytes = undefined };
 
         if (buf.len != 36 or buf[8] != '-' or buf[13] != '-' or buf[18] != '-' or buf[23] != '-')
-            return Error.InvalidUUID;
+            return error.InvalidUUID;
 
         inline for (encoded_pos, 0..) |i, j| {
             const hi = hex_to_nibble[buf[i + 0]];
             const lo = hex_to_nibble[buf[i + 1]];
-            if (hi == 0xff or lo == 0xff) {
-                return Error.InvalidUUID;
-            }
+            if (hi == 0xff or lo == 0xff) return error.InvalidUUID;
             uuid.bytes[j] = hi << 4 | lo;
         }
 
@@ -145,6 +155,6 @@ test "invalid UUID" {
     };
 
     for (uuids) |uuid| {
-        try std.testing.expectError(Error.InvalidUUID, UUID.parse(uuid));
+        try std.testing.expectError(error.InvalidUUID, UUID.parse(uuid));
     }
 }

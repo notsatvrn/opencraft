@@ -1,10 +1,10 @@
 const std = @import("std");
 
-const io = @import("../io.zig");
+const nbt = @import("nbt.zig");
 const types = @import("../types.zig");
 const number = @import("number.zig");
 
-var allocator = @import("../global.zig").allocator;
+var allocator = @import("../util.zig").allocator;
 
 pub const ArrayItemType = enum {
     VarNum,
@@ -86,12 +86,12 @@ pub const Writer = struct {
     //    try self.buffer.appendSlice(slot.write(self.version));
     //}
 
-    pub inline fn writeTag(self: *Writer, nbt: io.nbt.Tag) !void {
-        try self.buffer.appendSlice(nbt.writeAlloc());
+    pub inline fn writeTag(self: *Writer, tag: nbt.Tag) !void {
+        try self.buffer.appendSlice(tag.writeAlloc());
     }
 
-    pub inline fn writeNamedTag(self: *Writer, nbt: io.nbt.NamedTag) !void {
-        try self.buffer.appendSlice(nbt.writeAlloc());
+    pub inline fn writeNamedTag(self: *Writer, tag: nbt.NamedTag) !void {
+        try self.buffer.appendSlice(tag.writeAlloc());
     }
 
     pub inline fn writePosition(self: *Writer, pos: types.Vec3i) !void {
@@ -239,14 +239,14 @@ pub const Reader = struct {
     //    try self.buffer.appendSlice(slot.write(self.version));
     //}
 
-    pub inline fn readTag(self: *Reader, typ: io.nbt.Type) !io.nbt.Tag {
-        const tag = try io.nbt.Tag.read(self.buffer.items[self.position..], typ);
+    pub inline fn readTag(self: *Reader, typ: nbt.Type) !nbt.Tag {
+        const tag = try nbt.Tag.read(self.buffer.items[self.position..], typ);
         try self.advance(tag[1]);
         return tag[0];
     }
 
-    pub inline fn readNamedTag(self: *Reader) !io.nbt.NamedTag {
-        const tag = try io.nbt.NamedTag.read(self.buffer.items[self.position..]);
+    pub inline fn readNamedTag(self: *Reader) !nbt.NamedTag {
+        const tag = try nbt.NamedTag.read(self.buffer.items[self.position..]);
         try self.advance(tag[1]);
         return tag[0];
     }
@@ -261,8 +261,9 @@ pub const Reader = struct {
         return .{ .bytes = self.buffer.items[self.position - 16 .. self.position] };
     }
 
-    pub fn readArray(self: *Reader, comptime T: type, item_type: ?ArrayItemType, size: usize) ![]T {
+    pub fn readArray(self: *Reader, comptime T: type, comptime item_type: ?ArrayItemType, size: usize) ![]T {
         const item_size = @sizeOf(T);
+        const var_num = (item_type != null and item_type.? == .VarNum);
         var output = allocator.alloc(T, size);
         var s: usize = self.position;
         var e: usize = s;
@@ -273,8 +274,8 @@ pub const Reader = struct {
             T == u8 or
             T == i16 or
             T == u16 or
-            (T == i32 and item_type != .VarNum) or
-            (T == i64 and item_type != .VarNum) or
+            (T == i32 and !var_num) or
+            (T == i64 and !var_num) or
             T == f32 or
             T == f64) self.advance(size * item_size);
 
@@ -287,7 +288,10 @@ pub const Reader = struct {
                 output[i] = @bitCast(self.buffer.items[s]);
                 s += 1;
             },
-            u8 => output = self.buffer.items[self.position - size .. self.position],
+            u8 => while (i < size) : (i += 1) {
+                output[i] = self.buffer.items[s];
+                s += 1;
+            },
             i16 => while (i < size) : (i += 1) {
                 e += 2;
                 output[i] = number.readBig(i16, self.buffer.items[s..e]);
@@ -298,7 +302,7 @@ pub const Reader = struct {
                 output[i] = number.readBig(u16, self.buffer.items[s..e]);
                 s = e;
             },
-            i32 => if (item_type != null and item_type.? == .VarNum) {
+            i32 => if (var_num) {
                 while (i < size) : (i += 1) {
                     const result = number.readVarInt(self.buffer.items[s .. s + 5]);
                     output[i] = result[0];
@@ -311,10 +315,12 @@ pub const Reader = struct {
                     s = e;
                 }
             },
-            i64 => if (item_type != null and item_type.? == .VarNum) {
-                const result = number.readVarLong(self.buffer.items[s .. s + 10]);
-                output[i] = result[0];
-                s += output[1];
+            i64 => if (var_num) {
+                while (i < size) : (i += 1) {
+                    const result = number.readVarLong(self.buffer.items[s .. s + 10]);
+                    output[i] = result[0];
+                    s += output[1];
+                }
             } else {
                 while (i < size) : (i += 1) {
                     e += 8;
@@ -334,28 +340,28 @@ pub const Reader = struct {
             },
             else => if (@hasDecl(T, "read")) {
                 const fi = @typeInfo(T.read);
-                if (fi != .Fn) @compileError("bad array item type");
+                comptime if (fi != .Fn) @compileError("bad array item type");
 
-                if (fi.Fn.params.len == 1) {
+                comptime if (fi.Fn.params.len == 1) {
                     if (fi.Fn.params[0].type != []const u8) @compileError("bad array item type");
                 } else if (fi.Fn.params.len == 2) {
                     if (fi.Fn.params[0].type != u16) @compileError("bad array item type");
                     if (fi.Fn.params[1].type != []const u8) @compileError("bad array item type");
                 } else {
                     @compileError("bad array item type");
-                }
+                };
 
                 const result_type = struct { T, usize };
                 const frt = fi.Fn.return_type;
-                var result: result_type = undefined;
-                if (frt == null) @compileError("bad array item type");
+                comptime if (frt == null) @compileError("bad array item type");
                 const frti = @typeInfo(frt);
-                if (frti == .ErrorUnion) {
+                comptime if (frti == .ErrorUnion) {
                     if (frti.ErrorUnion.payload != result_type) @compileError("bad array item type");
                 } else {
                     if (frt != result_type) @compileError("bad array item type");
-                }
+                };
 
+                var result: result_type = undefined;
                 while (i < size) : (i += 1) {
                     if (frti == .ErrorUnion) {
                         result = try T.read(self.version, self.buffer.items[s..]);

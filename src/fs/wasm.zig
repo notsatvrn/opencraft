@@ -1,9 +1,7 @@
-// Higher-level wrapper over the std.fs API.
-
 const std = @import("std");
-const bytes = @import("bytes.zig");
+const util = @import("../util.zig");
 
-var allocator = @import("../global.zig").allocator;
+var allocator = util.allocator;
 
 // FUNCTIONS
 
@@ -13,7 +11,7 @@ pub fn absolutePath(path: []const u8) ![]const u8 {
     } else if (path[0] == '/') {
         return path;
     }
-    return bytes.appendByteSlices("/", path);
+    return util.appendStrings("/", path);
 }
 
 pub inline fn exists(path: []const u8) bool {

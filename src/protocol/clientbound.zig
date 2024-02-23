@@ -1,8 +1,8 @@
-// CLIENT MESSAGES - server -> client
+// CLIENTBOUND MESSAGES - server -> client
 // Based on the latest stable version of the protocol: https://wiki.vg/Protocol
 
 const std = @import("std");
-const io = @import("../io.zig");
+const fmt = @import("../fmt.zig");
 
 const play = @import("client/play.zig");
 
@@ -42,7 +42,7 @@ pub const PlayMessage = union(enum) {
     spawn_player: play.SpawnPlayer,
     keep_alive: []u8,
 
-    pub fn write(self: PlayMessage, writer: *io.packet.PacketWriter, version: u16) !?[][]const u8 {
+    pub fn write(self: PlayMessage, writer: *fmt.packet.PacketWriter, version: u16) !?[][]const u8 {
         return switch (self) {
             PlayMessage.spawn_entity => |v| v.write(writer, version),
             PlayMessage.spawn_exp_orb => |v| v.write(writer, version),

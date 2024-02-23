@@ -1,14 +1,12 @@
-// Higher-level wrapper over the std.fs API.
-
 const std = @import("std");
 
-var allocator = @import("../global.zig").allocator;
+var allocator = @import("../util.zig").allocator;
 
 // FUNCTIONS
 
 pub fn absolutePath(path: []const u8) ![]const u8 {
     return if (std.fs.path.isAbsolute(path)) path else blk: {
-        var cwd = try std.process.getCwdAlloc(allocator);
+        const cwd = try std.process.getCwdAlloc(allocator);
         defer allocator.free(cwd);
         break :blk try std.fs.path.join(allocator, &[2][]const u8{ cwd, path });
     };

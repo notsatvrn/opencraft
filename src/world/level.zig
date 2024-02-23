@@ -1,3 +1,0 @@
-pub const Level = struct {
-
-};

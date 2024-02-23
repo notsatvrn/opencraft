@@ -1,18 +1,16 @@
 const std = @import("std");
 
-const io = @import("io.zig");
-const world = @import("world.zig");
+const fs = @import("../fs.zig");
+const world = @import("../world.zig");
 
-var allocator = @import("global.zig").allocator;
-
-pub var config: ?Config = null;
+var allocator = @import("../util.zig").allocator;
 
 pub const NetworkConfig = struct {
     enabled: bool = true,
     host: []const u8 = "0.0.0.0",
     port: u16 = 25565,
     online: bool = true,
-    compression_threshold: i32 = 256,
+    compression_threshold: ?u16 = 256,
     white_list: bool = false,
 };
 
@@ -28,7 +26,7 @@ pub const QueryConfig = struct {
 };
 
 pub const ResourcePackConfig = struct {
-    enabled: bool = true,
+    enabled: bool = false,
     url: []const u8 = "",
     hash: []const u8 = "",
     required: bool = false,
@@ -40,7 +38,8 @@ pub const WorldConfig = struct {
     name: []const u8 = "world",
     difficulty: []const u8 = "normal",
     hardcore: bool = false,
-    op_permission_level: u3 = 4,
+    protection: bool = false,
+    operator_role: []const u8 = "owner",
 };
 
 pub const AnimalsConfig = struct {
@@ -96,31 +95,22 @@ pub const Config = struct {
     } = .{},
 };
 
-pub const ConfigError = error{
-    bad_compression_threshold,
-};
-
-pub fn load() !void {
-    if (config != null) return;
-
-    config = Config{};
-
-    if (!io.fs.exists("config.json")) {
+pub fn loadPath(path: []const u8) !Config {
+    var config = undefined;
+    if (!fs.exists(path)) {
         var string = std.ArrayList(u8).init(allocator);
         defer string.deinit();
 
-        try std.json.stringify(config.?, .{ .whitespace = .{} }, string.writer());
+        config = Config{};
+        try std.json.stringify(config, .{
+            .whitespace = .indent_tab,
+        }, string.writer());
 
-        (try io.fs.File.newWithContents("config.json", try string.toOwnedSlice())).close();
+        (try fs.File.newWithContents(path, try string.toOwnedSlice())).close();
     } else {
-        var file = try io.fs.File.open("config.json");
-        defer file.close();
-
-        var stream = std.json.TokenStream.init(try file.read());
-        config = try std.json.parse(Config, &stream, .{ .allocator = allocator });
-
-        if (config.?.network.compression_threshold < -1) {
-            return ConfigError.bad_compression_threshold;
-        }
+        var file = try fs.File.open(path);
+        config = (try std.json.parseFromSlice(Config, allocator, try file.read(), .{})).value;
+        file.close();
     }
+    return config;
 }

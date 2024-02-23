@@ -1,0 +1,17 @@
+.{
+    .name = "opencraft",
+    .version = "0.0.0",
+    .dependencies = .{
+        .unicode = .{
+            .url = "https://github.com/notsatvrn/zig-unicode/archive/6fc951cb8ae81a6de586ebbc2b442ae9fa3e1d66.tar.gz",
+            .hash = "1220322da23d212a5922cbc3185c218af594444852a4e1723b2dcffb7b36631cad05",
+        },
+        .network = .{
+            .url = "https://github.com/MasterQ32/zig-network/archive/e734600daa590ab39d7bb76a5a5054b6efd1f126.tar.gz",
+            .hash = "122033fba45ac83a780b1db316526158794a7dc184138a57a001a2db0aaa81b9e18c",
+        },
+    },
+    .paths = .{
+        "",
+    },
+}
