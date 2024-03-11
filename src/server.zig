@@ -9,11 +9,30 @@ pub const Server = struct {
     config: config.Config,
     state: State = .starting_up,
 
+    const Self = @This();
+
     pub const State = enum {
         starting_up,
         running,
         shutting_down,
     };
+
+    pub fn listen(self: *Self) !void {
+        var socket = try network.Socket.create(.ipv4, .tcp);
+        try socket.bindToPort(self.config.network.port);
+        try socket.listen();
+
+        while (true) {
+            var client = try socket.accept();
+            defer client.close();
+
+            std.log.info("Client connected from {}.\n", .{
+                try client.getLocalEndPoint(),
+            });
+
+            std.log.info("Client disconnected.\n", .{});
+        }
+    }
 };
 
 pub fn main() !void {
@@ -22,25 +41,14 @@ pub fn main() !void {
     const cfg = try config.loadPath("config.json");
     std.log.info("config loaded", .{});
 
-    _ = Server{
+    var server = Server{
         .config = cfg,
     };
 
     if (cfg.network.enabled) {
-        //std.Thread.spawn(.{}, function: anytype, .{})
-        var socket = try network.Socket.create(.ipv4, .tcp);
-        socket.bindToPort(cfg.network.port);
-        socket.listen();
-
-        while (true) {
-            var client = try socket.accept();
-            defer client.close();
-
-            std.debug.print("Client connected from {}.\n", .{
-                try client.getLocalEndPoint(),
-            });
-
-            std.debug.print("Client disconnected.\n", .{});
-        }
+        var thread = try std.Thread.spawn(.{}, Server.listen, .{&server});
+        thread.detach();
     }
+
+    std.log.info("now listening", .{});
 }

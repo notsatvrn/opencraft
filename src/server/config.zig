@@ -96,7 +96,7 @@ pub const Config = struct {
 };
 
 pub fn loadPath(path: []const u8) !Config {
-    var config = undefined;
+    var config: Config = undefined;
     if (!fs.exists(path)) {
         var string = std.ArrayList(u8).init(allocator);
         defer string.deinit();

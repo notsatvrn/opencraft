@@ -4,7 +4,7 @@
 const std = @import("std");
 const fmt = @import("../fmt.zig");
 
-const play = @import("client/play.zig");
+const play = @import("clientbound/play.zig");
 
 pub const Message = union(enum) {
     status: StatusMessage,
